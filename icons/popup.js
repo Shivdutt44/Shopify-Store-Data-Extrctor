@@ -4,12 +4,12 @@ let currentStoreCollections = [];
 let currentStoreUrl = '';
 let isExtracting = false;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Use existing stats container from HTML
     const statsContainer = document.getElementById('statsContainer');
-    
+
     // Get the current tab URL when the popup opens
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         if (tabs.length > 0) {
             const currentUrl = tabs[0].url;
             try {
@@ -20,10 +20,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (storeUrlDisplay) {
                     storeUrlDisplay.textContent = urlObj.hostname;
                 }
-                
+
                 // Check if it's a Shopify store
                 checkShopifyStore(currentUrl);
-                
+
                 // Automatically start extraction if not already extracting
                 if (!isExtracting) {
                     setTimeout(() => {
@@ -60,21 +60,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function checkShopifyStore(url) {
     // Check if the current page is a Shopify store
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         if (tabs.length === 0) return;
-        
+
         // Use chrome.tabs.executeScript for Manifest V2 compatibility
         // or check if chrome.scripting is available
         if (chrome.scripting && chrome.scripting.executeScript) {
             chrome.scripting.executeScript({
-                target: {tabId: tabs[0].id},
+                target: { tabId: tabs[0].id },
                 func: isShopifyStore
             }, (results) => {
                 if (chrome.runtime.lastError) {
                     console.error('Error checking Shopify:', chrome.runtime.lastError);
                     return;
                 }
-                
+
                 if (results && results[0] && results[0].result) {
                     const progressMessage = document.getElementById('progressMessage');
                     if (progressMessage) {
@@ -96,7 +96,7 @@ function checkShopifyStore(url) {
                     console.error('Error checking Shopify:', chrome.runtime.lastError);
                     return;
                 }
-                
+
                 if (results && results[0]) {
                     const progressMessage = document.getElementById('progressMessage');
                     if (progressMessage) {
@@ -122,20 +122,20 @@ function isShopifyStore() {
         document.querySelector('link[href*="shopify"]'),
         document.body.innerHTML.includes('shopify')
     ];
-    
+
     return shopifyIndicators.some(indicator => indicator);
 }
 
 function startExtraction() {
     if (isExtracting) return;
-    
+
     isExtracting = true;
     const extractBtn = document.getElementById('extractBtn');
     if (extractBtn) {
         extractBtn.disabled = true;
         extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Extracting...</span>';
     }
-    
+
     // Reset state
     allProductsData = [];
     currentStoreCollections = [];
@@ -159,7 +159,7 @@ function startExtraction() {
     if (collectionSelect) {
         collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
     }
-    
+
     // Start extraction process
     fetchStoreData();
 }
@@ -174,15 +174,15 @@ async function fetchStoreData() {
     const collectionInfo = document.getElementById('collectionInfo');
     const extractBtn = document.getElementById('extractBtn');
     const statsContainer = document.getElementById('statsContainer');
-    
+
     if (!currentStoreUrl) {
         showError('No store URL detected. Please navigate to a Shopify store first.');
         resetExtractButton();
         return;
     }
-    
+
     updateProgress(0, 'Initializing automatic extraction...');
-    
+
     try {
         // First, try to fetch collections
         updateProgress(10, 'Connecting to store for automatic extraction...');
@@ -192,25 +192,25 @@ async function fetchStoreData() {
                 'Accept': 'application/json'
             }
         });
-        
+
         if (!collectionsResponse.ok) {
             throw new Error(`HTTP error! status: ${collectionsResponse.status}`);
         }
-        
+
         const collectionsData = await collectionsResponse.json();
         updateProgress(30, 'Analyzing collections for automatic extraction...');
-        
+
         if (collectionsData && collectionsData.collections) {
             const collections = collectionsData.collections;
             currentStoreCollections = collections;
-            
+
             if (collections.length === 0) {
                 showError('No collections found in this store');
                 updateProgress(100, 'No collections found', true);
                 resetExtractButton();
                 return;
             }
-            
+
             // Update stats
             if (collectionsCount) {
                 collectionsCount.textContent = collections.length;
@@ -218,25 +218,25 @@ async function fetchStoreData() {
             if (statsContainer) {
                 statsContainer.style.display = 'grid';
             }
-            
+
             // Populate collection dropdown with product counts
             let totalProducts = 0;
             const productCountsByCollection = {};
-            
+
             // First get all collection handles to count products
             for (let i = 0; i < collections.length; i++) {
                 const collection = collections[i];
                 try {
                     const progress = 30 + Math.floor((i / collections.length) * 20);
                     updateProgress(progress, `Counting products in ${collection.title} for automatic extraction...`);
-                    
+
                     const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json`;
                     const productsResponse = await fetchWithTimeout(productsUrl, {
                         headers: {
                             'Accept': 'application/json'
                         }
                     });
-                    
+
                     if (productsResponse.ok) {
                         const productsData = await productsResponse.json();
                         if (productsData && productsData.products) {
@@ -254,7 +254,7 @@ async function fetchStoreData() {
                     productCountsByCollection[collection.handle] = 0;
                 }
             }
-            
+
             // Now populate the dropdown with counts
             if (collectionSelect) {
                 collections.forEach(collection => {
@@ -266,39 +266,39 @@ async function fetchStoreData() {
                     collectionSelect.appendChild(option);
                 });
             }
-            
+
             // Update the "All Collections" option with total count
             const allOption = collectionSelect ? collectionSelect.querySelector('option[value="all"]') : null;
             if (allOption) {
                 allOption.textContent = `All Collections (${totalProducts} products)`;
                 allOption.dataset.count = totalProducts;
             }
-            
+
             // Update collection info
             if (collectionInfo) {
                 collectionInfo.textContent = `Found ${collections.length} collections with ${totalProducts} total products`;
             }
-            
+
             // Now fetch all products for each collection
             for (let i = 0; i < collections.length; i++) {
                 const collection = collections[i];
                 try {
                     const progress = 50 + Math.floor((i / collections.length) * 40);
                     updateProgress(progress, `Fetching ${collection.title} products for automatic extraction...`);
-                    
+
                     const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json`;
                     const productsResponse = await fetchWithTimeout(productsUrl, {
                         headers: {
                             'Accept': 'application/json'
                         }
                     });
-                    
+
                     if (productsResponse.ok) {
                         const productsData = await productsResponse.json();
-                        
+
                         if (productsData && productsData.products) {
                             const products = productsData.products;
-                            
+
                             // Store products for CSV export with all possible fields
                             products.forEach(product => {
                                 const productData = {
@@ -315,25 +315,25 @@ async function fetchStoreData() {
                                     template_suffix: product.template_suffix || '',
                                     published_scope: product.published_scope || '',
                                     status: product.status || 'active',
-                                    
+
                                     // SEO fields
                                     metafields_global_title_tag: product.metafields_global_title_tag || '',
                                     metafields_global_description_tag: product.metafields_global_description_tag || '',
-                                    
+
                                     // Options
                                     options: product.options || [],
-                                    
+
                                     // Variants
                                     variants: product.variants || [],
-                                    
+
                                     // Images
                                     images: product.images || [],
                                     image: product.image || null,
-                                    
+
                                     // Collection info
                                     collection_title: collection.title || '',
                                     collection_handle: collection.handle || '',
-                                    
+
                                     // Additional fields
                                     requires_shipping: product.requires_shipping || false,
                                     taxable: product.taxable || false,
@@ -352,7 +352,7 @@ async function fetchStoreData() {
                                 };
                                 allProductsData.push(productData);
                             });
-                            
+
                             // Update products count
                             if (productsCount) {
                                 productsCount.textContent = allProductsData.length;
@@ -363,16 +363,16 @@ async function fetchStoreData() {
                     console.error(`Error fetching products for collection ${collection.title}:`, error);
                 }
             }
-            
+
             // Show collection selector
             const collectionSelector = document.getElementById('collectionSelector');
             if (collectionSelector) {
                 collectionSelector.style.display = 'block';
             }
-            
+
             // Complete progress
             updateProgress(100, 'Automatic extraction complete!');
-            
+
             // Enable buttons if we have data
             if (allProductsData.length > 0) {
                 const downloadBtn = document.getElementById('downloadBtn');
@@ -384,7 +384,7 @@ async function fetchStoreData() {
                     viewResultsBtn.disabled = false;
                 }
             }
-            
+
             // Store data for results page
             chrome.storage.local.set({
                 storeData: {
@@ -393,7 +393,7 @@ async function fetchStoreData() {
                     storeUrl: currentStoreUrl
                 }
             });
-            
+
         } else {
             showError('No collections found or data format unexpected. This might not be a Shopify store.');
             updateProgress(100, 'Extraction failed', true);
@@ -402,7 +402,7 @@ async function fetchStoreData() {
     } catch (error) {
         console.error('Error fetching store data:', error);
         updateProgress(100, 'Extraction failed', true);
-        
+
         let errorMessage = `
             <div class="error-title">
                 <i class="fas fa-times-circle"></i>
@@ -418,7 +418,7 @@ async function fetchStoreData() {
                 </ul>
             </div>
         `;
-        
+
         // Add specific error information if available
         if (error.message) {
             errorMessage += `
@@ -427,9 +427,9 @@ async function fetchStoreData() {
                 </div>
             `;
         }
-        
+
         showError(errorMessage);
-        
+
         resetExtractButton();
     } finally {
         isExtracting = false;
@@ -441,7 +441,7 @@ function fetchWithTimeout(url, options = {}, timeout = 10000) {
         const timeoutId = setTimeout(() => {
             reject(new Error('Request timeout'));
         }, timeout);
-        
+
         fetch(url, options)
             .then(response => {
                 clearTimeout(timeoutId);
@@ -469,33 +469,33 @@ function downloadCSV() {
         alert('No product data available to download');
         return;
     }
-    
+
     const collectionSelect = document.getElementById('collectionSelect');
     const selectedCollectionHandle = collectionSelect.value;
-    
+
     let productsToExport = allProductsData;
-    let fileName = `shopify_products_${new Date().toISOString().slice(0,10)}.csv`;
-    
+    let fileName = `shopify_products_${new Date().toISOString().slice(0, 10)}.csv`;
+
     if (selectedCollectionHandle !== 'all') {
         productsToExport = allProductsData.filter(
             p => p.collection_handle === selectedCollectionHandle
         );
-        
+
         // Get the collection title for the filename
         const selectedCollection = currentStoreCollections.find(
             c => c.handle === selectedCollectionHandle
         );
-        const collectionTitle = selectedCollection ? 
-            selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 
+        const collectionTitle = selectedCollection ?
+            selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
-        fileName = `shopify_products_${collectionTitle}_${new Date().toISOString().slice(0,10)}.csv`;
+        fileName = `shopify_products_${collectionTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
     }
-    
+
     if (productsToExport.length === 0) {
         alert('No products found for the selected collection');
         return;
     }
-    
+
     // CSV header row (Shopify import format with all possible fields)
     const headers = [
         'Handle',
@@ -540,18 +540,20 @@ function downloadCSV() {
         'Collection',
         'Collection Handle'
     ];
-    
+
     // Process all products into CSV rows
     const csvRows = [];
     csvRows.push(headers.join(','));
-    
+
     productsToExport.forEach(product => {
         const variants = product.variants && product.variants.length > 0 ? product.variants : [{}];
         const images = product.images || [];
-        const mainImage = product.image || (images.length > 0 ? images[0] : null);
-        const thumbnailImage = images.length > 0 ? images[0] : null;
-        
-        variants.forEach((variant, index) => {
+        const maxRows = Math.max(variants.length, images.length > 0 ? images.length : 1);
+
+        for (let i = 0; i < maxRows; i++) {
+            const variant = i < variants.length ? variants[i] : {};
+            const image = i < images.length ? images[i] : null;
+
             const row = [
                 `"${escapeCsvValue(product.handle)}"`,
                 `"${escapeCsvValue(product.title)}"`,
@@ -566,56 +568,56 @@ function downloadCSV() {
                 `"${escapeCsvValue(product.template_suffix)}"`,
                 `"${escapeCsvValue(product.published_scope)}"`,
                 `"${escapeCsvValue(product.status)}"`,
-                `"${escapeCsvValue(product.options[0]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[0] ? product.options[0].name : '')}"`,
                 `"${escapeCsvValue(variant.option1)}"`,
-                `"${escapeCsvValue(product.options[1]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[1] ? product.options[1].name : '')}"`,
                 `"${escapeCsvValue(variant.option2)}"`,
-                `"${escapeCsvValue(product.options[2]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[2] ? product.options[2].name : '')}"`,
                 `"${escapeCsvValue(variant.option3)}"`,
                 `"${escapeCsvValue(variant.sku)}"`,
-                variant.grams || '0',
+                variant.grams || (i < variants.length ? '0' : ''),
                 `"${escapeCsvValue(variant.inventory_management)}"`,
-                variant.inventory_quantity || '0',
-                `"${escapeCsvValue(variant.inventory_policy || 'deny')}"`,
-                `"${escapeCsvValue(variant.fulfillment_service || 'manual')}"`,
-                variant.price || '0.00',
-                variant.compare_at_price || '0.00',
-                variant.requires_shipping ? 'true' : 'false',
-                variant.taxable ? 'true' : 'false',
+                variant.inventory_quantity !== undefined ? variant.inventory_quantity : (i < variants.length ? '0' : ''),
+                `"${escapeCsvValue(variant.inventory_policy || (i < variants.length ? 'deny' : ''))}"`,
+                `"${escapeCsvValue(variant.fulfillment_service || (i < variants.length ? 'manual' : ''))}"`,
+                variant.price || (i < variants.length ? '0.00' : ''),
+                variant.compare_at_price || (i < variants.length ? '0.00' : ''),
+                variant.requires_shipping !== undefined ? (variant.requires_shipping ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                variant.taxable !== undefined ? (variant.taxable ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
                 `"${escapeCsvValue(variant.barcode)}"`,
-                variant.weight || '0',
-                `"${escapeCsvValue(variant.weight_unit || 'kg')}"`,
-                `"${escapeCsvValue(mainImage?.src)}"`,
-                '1',
-                `"${escapeCsvValue(product.title)}"`,
-                `"${escapeCsvValue(thumbnailImage?.src)}"`,
+                variant.weight || (i < variants.length ? '0' : ''),
+                `"${escapeCsvValue(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
+                `"${escapeCsvValue(image?.src)}"`,
+                image ? String(i + 1) : '',
+                `"${escapeCsvValue(image ? product.title : '')}"`,
+                i === 0 ? `"${escapeCsvValue(images.length > 0 ? images[0].src : '')}"` : '""',
                 product.gift_card ? 'true' : 'false',
                 `"${escapeCsvValue(product.metafields_global_title_tag)}"`,
                 `"${escapeCsvValue(product.metafields_global_description_tag)}"`,
                 `"${escapeCsvValue(product.collection_title)}"`,
                 `"${escapeCsvValue(product.collection_handle)}"`
             ];
-            
+
             csvRows.push(row.join(','));
-        });
+        }
     });
-    
+
     // Create CSV file with BOM for UTF-8
     const csvContent = "\uFEFF" + csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
+
     // Create download link
     const link = document.createElement('a');
     link.setAttribute('href', url);
     link.setAttribute('download', fileName);
-    
+
     // Append to body (required for Firefox)
     document.body.appendChild(link);
-    
+
     // Trigger download
     link.click();
-    
+
     // Clean up
     document.body.removeChild(link);
     setTimeout(() => {
@@ -634,12 +636,12 @@ function showError(message) {
     errorCard.className = 'error-card';
     errorCard.innerHTML = message;
     progressContainer.appendChild(errorCard);
-    
+
     // Add retry button
     const retryBtn = document.createElement('button');
     retryBtn.className = 'btn retry-btn';
     retryBtn.innerHTML = '<i class="fas fa-redo"></i><span>Retry Extraction</span>';
-    retryBtn.addEventListener('click', function() {
+    retryBtn.addEventListener('click', function () {
         errorCard.remove();
         startExtraction();
     });
@@ -650,26 +652,26 @@ function updateProgress(percent, message = '', isError = false) {
     const progressRing = document.querySelector('.progress-ring-circle');
     const percentageText = document.querySelector('.percentage');
     const progressMessage = document.getElementById('progressMessage');
-    
+
     // Ensure percent stays between 0-100
     percent = Math.max(0, Math.min(100, Math.round(percent)));
-    
+
     // Calculate the dash offset for the circular progress
     // Fixed: Use the correct radius (45) for calculation
     const circumference = 2 * Math.PI * 45;
     const offset = circumference - (percent / 100) * circumference;
-    
+
     // Update progress ring
     progressRing.style.strokeDashoffset = offset;
-    
+
     // Update percentage text
     percentageText.textContent = `${percent}%`;
-    
+
     // Update progress message if provided
     if (message) {
         progressMessage.textContent = message;
     }
-    
+
     // Handle error state
     if (isError) {
         progressRing.style.stroke = 'var(--error)';

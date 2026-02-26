@@ -548,10 +548,12 @@ function downloadCSV() {
     productsToExport.forEach(product => {
         const variants = product.variants && product.variants.length > 0 ? product.variants : [{}];
         const images = product.images || [];
-        const mainImage = product.image || (images.length > 0 ? images[0] : null);
-        const thumbnailImage = images.length > 0 ? images[0] : null;
+        const maxRows = Math.max(variants.length, images.length > 0 ? images.length : 1);
         
-        variants.forEach((variant, index) => {
+        for (let i = 0; i < maxRows; i++) {
+            const variant = i < variants.length ? variants[i] : {};
+            const image = i < images.length ? images[i] : null;
+            
             const row = [
                 `"${escapeCsvValue(product.handle)}"`,
                 `"${escapeCsvValue(product.title)}"`,
@@ -566,29 +568,29 @@ function downloadCSV() {
                 `"${escapeCsvValue(product.template_suffix)}"`,
                 `"${escapeCsvValue(product.published_scope)}"`,
                 `"${escapeCsvValue(product.status)}"`,
-                `"${escapeCsvValue(product.options[0]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[0] ? product.options[0].name : '')}"`,
                 `"${escapeCsvValue(variant.option1)}"`,
-                `"${escapeCsvValue(product.options[1]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[1] ? product.options[1].name : '')}"`,
                 `"${escapeCsvValue(variant.option2)}"`,
-                `"${escapeCsvValue(product.options[2]?.name)}"`,
+                `"${escapeCsvValue(product.options && product.options[2] ? product.options[2].name : '')}"`,
                 `"${escapeCsvValue(variant.option3)}"`,
                 `"${escapeCsvValue(variant.sku)}"`,
-                variant.grams || '0',
+                variant.grams || (i < variants.length ? '0' : ''),
                 `"${escapeCsvValue(variant.inventory_management)}"`,
-                variant.inventory_quantity || '0',
-                `"${escapeCsvValue(variant.inventory_policy || 'deny')}"`,
-                `"${escapeCsvValue(variant.fulfillment_service || 'manual')}"`,
-                variant.price || '0.00',
-                variant.compare_at_price || '0.00',
-                variant.requires_shipping ? 'true' : 'false',
-                variant.taxable ? 'true' : 'false',
+                variant.inventory_quantity !== undefined ? variant.inventory_quantity : (i < variants.length ? '0' : ''),
+                `"${escapeCsvValue(variant.inventory_policy || (i < variants.length ? 'deny' : ''))}"`,
+                `"${escapeCsvValue(variant.fulfillment_service || (i < variants.length ? 'manual' : ''))}"`,
+                variant.price || (i < variants.length ? '0.00' : ''),
+                variant.compare_at_price || (i < variants.length ? '0.00' : ''),
+                variant.requires_shipping !== undefined ? (variant.requires_shipping ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                variant.taxable !== undefined ? (variant.taxable ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
                 `"${escapeCsvValue(variant.barcode)}"`,
-                variant.weight || '0',
-                `"${escapeCsvValue(variant.weight_unit || 'kg')}"`,
-                `"${escapeCsvValue(mainImage?.src)}"`,
-                '1',
-                `"${escapeCsvValue(product.title)}"`,
-                `"${escapeCsvValue(thumbnailImage?.src)}"`,
+                variant.weight || (i < variants.length ? '0' : ''),
+                `"${escapeCsvValue(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
+                `"${escapeCsvValue(image?.src)}"`,
+                image ? String(i + 1) : '',
+                `"${escapeCsvValue(image ? product.title : '')}"`,
+                i === 0 ? `"${escapeCsvValue(images.length > 0 ? images[0].src : '')}"` : '""',
                 product.gift_card ? 'true' : 'false',
                 `"${escapeCsvValue(product.metafields_global_title_tag)}"`,
                 `"${escapeCsvValue(product.metafields_global_description_tag)}"`,
@@ -597,7 +599,7 @@ function downloadCSV() {
             ];
             
             csvRows.push(row.join(','));
-        });
+        }
     });
     
     // Create CSV file with BOM for UTF-8
