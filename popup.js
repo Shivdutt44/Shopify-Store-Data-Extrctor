@@ -700,6 +700,7 @@ async function detectThemeInfo() {
     const themeNameEl = document.getElementById('themeName');
     const themeVersionEl = document.getElementById('themeVersion');
     const themePlanEl = document.getElementById('themePlan');
+    const platformEl = document.getElementById('platform');
 
     // Set loading state
     storeNameEl.textContent = 'Detecting...';
@@ -707,6 +708,7 @@ async function detectThemeInfo() {
     themeNameEl.textContent = 'Detecting...';
     themeVersionEl.textContent = 'Detecting...';
     themePlanEl.textContent = 'Detecting...';
+    if (platformEl) platformEl.textContent = 'Detecting...';
 
     try {
         // Get current tab
@@ -732,7 +734,19 @@ async function detectThemeInfo() {
             themeIdEl.textContent = themeData.themeId || 'N/A';
             themeNameEl.textContent = themeData.themeName || 'N/A';
             themeVersionEl.textContent = themeData.themeVersion || 'N/A';
-            themePlanEl.textContent = themeData.themePlan || 'Basic';
+
+            // Format plan gracefully (e.g. 'basic' to 'Basic', 'enterprise' to 'Plus / Enterprise')
+            if (themeData.themePlan) {
+                let planStr = themeData.themePlan.toLowerCase().trim();
+                if (planStr === 'enterprise' || planStr === 'custom' || planStr === 'plus') {
+                    themePlanEl.textContent = 'Shopify Plus';
+                } else {
+                    themePlanEl.textContent = planStr.charAt(0).toUpperCase() + planStr.slice(1);
+                }
+            } else {
+                themePlanEl.textContent = 'Basic';
+            }
+            if (platformEl) platformEl.textContent = themeData.platform || 'Shopify';
         } else {
             // Fallback: use store URL as store name
             storeNameEl.textContent = storeDomain;
@@ -740,6 +754,7 @@ async function detectThemeInfo() {
             themeNameEl.textContent = 'Not detected';
             themeVersionEl.textContent = 'N/A';
             themePlanEl.textContent = 'N/A';
+            if (platformEl) platformEl.textContent = 'Shopify';
         }
     } catch (error) {
         console.error('Error detecting theme:', error);
@@ -748,6 +763,7 @@ async function detectThemeInfo() {
         themeNameEl.textContent = 'Error';
         themeVersionEl.textContent = 'Error';
         themePlanEl.textContent = 'Error';
+        if (platformEl) platformEl.textContent = 'Error';
     }
 }
 
@@ -758,7 +774,8 @@ function detectShopifyTheme() {
         themeId: null,
         themeName: null,
         themeVersion: null,
-        themePlan: null
+        themePlan: null,
+        platform: 'Shopify'
     };
 
     try {
@@ -805,6 +822,20 @@ function detectShopifyTheme() {
             const schemaNameMatch = text.match(/"schema_name"\s*:\s*"([^"]+)"/);
             if (schemaNameMatch && schemaNameMatch[1] && !result.themeName) {
                 result.themeName = schemaNameMatch[1];
+            }
+
+            // Match Shopify plan commonly logged in __st.plan_name internally by Shopify
+            if (!result.themePlan) {
+                const planNameMatch = text.match(/["']plan_name["']\s*:\s*["']([^"']+)["']/i);
+                if (planNameMatch && planNameMatch[1]) {
+                    result.themePlan = planNameMatch[1];
+                } else {
+                    // Fallbacks for Shopify Analytics
+                    const analyticsPlan = text.match(/ShopifyAnalytics\.meta[\s\S]*?["']?plan["']?\s*:\s*["']([^"']+)["']/i);
+                    if (analyticsPlan && analyticsPlan[1]) {
+                        result.themePlan = analyticsPlan[1];
+                    }
+                }
             }
         });
 
