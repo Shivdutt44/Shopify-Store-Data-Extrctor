@@ -136,25 +136,6 @@ body::before {
     display: block;
 }
 
-.current-store {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 8px;
-    font-size: 12px;
-    color: var(--accent);
-    background: rgba(139, 92, 246, 0.1);
-    padding: 6px 12px;
-    border-radius: 20px;
-    width: fit-content;
-    margin: 8px auto 0;
-}
-
-.current-store i {
-    font-size: 12px;
-}
-
 .main-content {
     display: flex;
     flex-direction: column;
@@ -278,19 +259,6 @@ body::before {
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-}
-
-.section-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.section-title i {
-    color: var(--accent);
 }
 
 .collection-selector {

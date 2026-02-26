@@ -16,10 +16,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 const urlObj = new URL(currentUrl);
                 // Extract just the domain and protocol
                 currentStoreUrl = `${urlObj.protocol}//${urlObj.hostname}`;
-                const storeUrlDisplay = document.getElementById('storeUrlDisplay');
-                if (storeUrlDisplay) {
-                    storeUrlDisplay.textContent = urlObj.hostname;
-                }
 
                 // Check if it's a Shopify store
                 checkShopifyStore(currentUrl);
@@ -32,18 +28,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             } catch (e) {
                 console.error('Error parsing URL:', e);
-                const storeUrlDisplay = document.getElementById('storeUrlDisplay');
-                if (storeUrlDisplay) {
-                    storeUrlDisplay.textContent = 'Invalid URL';
-                }
                 showError('Invalid URL format. Please navigate to a valid Shopify store first.');
             }
         } else {
             // No active tab found
-            const storeUrlDisplay = document.getElementById('storeUrlDisplay');
-            if (storeUrlDisplay) {
-                storeUrlDisplay.textContent = 'No active tab';
-            }
             showError('No active tab found. Please navigate to a Shopify store first.');
         }
     });
