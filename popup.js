@@ -702,6 +702,7 @@ async function detectThemeInfo() {
     const themePlanEl = document.getElementById('themePlan');
     const platformEl = document.getElementById('platform');
     const mobileEl = document.getElementById('mobile');
+    const emailEl = document.getElementById('email');
 
     // Set loading state
     storeNameEl.textContent = 'Detecting...';
@@ -711,6 +712,7 @@ async function detectThemeInfo() {
     themePlanEl.textContent = 'Detecting...';
     if (platformEl) platformEl.textContent = 'Detecting...';
     if (mobileEl) mobileEl.textContent = 'Detecting...';
+    if (emailEl) emailEl.textContent = 'Detecting...';
 
     try {
         // Get current tab
@@ -750,6 +752,7 @@ async function detectThemeInfo() {
             }
             if (platformEl) platformEl.textContent = themeData.platform || 'Shopify';
             if (mobileEl) mobileEl.textContent = themeData.mobile || 'Not Found';
+            if (emailEl) emailEl.textContent = themeData.email || 'Not Found';
         } else {
             // Fallback: use store URL as store name
             storeNameEl.textContent = storeDomain;
@@ -759,6 +762,7 @@ async function detectThemeInfo() {
             themePlanEl.textContent = 'N/A';
             if (platformEl) platformEl.textContent = 'Shopify';
             if (mobileEl) mobileEl.textContent = 'Not Found';
+            if (emailEl) emailEl.textContent = 'Not Found';
         }
     } catch (error) {
         console.error('Error detecting theme:', error);
@@ -769,6 +773,7 @@ async function detectThemeInfo() {
         themePlanEl.textContent = 'Error';
         if (platformEl) platformEl.textContent = 'Error';
         if (mobileEl) mobileEl.textContent = 'Error';
+        if (emailEl) emailEl.textContent = 'Error';
     }
 }
 
@@ -781,7 +786,8 @@ function detectShopifyTheme() {
         themeVersion: null,
         themePlan: null,
         platform: 'Shopify',
-        mobile: null
+        mobile: null,
+        email: null
     };
 
     try {
@@ -890,6 +896,51 @@ function detectShopifyTheme() {
             }
         } catch (e) {
             console.log('Error detecting mobile:', e);
+        }
+
+        // Detect Store Email
+        try {
+            // 1. Check for mailto: links
+            const mailtoLinks = document.querySelectorAll('a[href^="mailto:"]');
+            if (mailtoLinks.length > 0) {
+                result.email = mailtoLinks[0].href.replace('mailto:', '').split('?')[0].trim();
+            }
+
+            if (!result.email) {
+                // 2. Look in JSON-LD
+                const scriptTags = document.querySelectorAll('script[type="application/ld+json"]');
+                for (let script of scriptTags) {
+                    try {
+                        const json = JSON.parse(script.innerText);
+                        if (json && json.email) {
+                            result.email = json.email;
+                            break;
+                        }
+                        if (Array.isArray(json)) {
+                            const match = json.find(j => j.email);
+                            if (match) {
+                                result.email = match.email;
+                                break;
+                            }
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            if (!result.email) {
+                // 3. RegEx search footer and header
+                const docText = (document.querySelector('footer')?.innerText || '') + ' ' + (document.querySelector('header')?.innerText || '');
+                const emailMatch = docText.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
+                if (emailMatch && emailMatch[1]) {
+                    // Ignore common image/asset extensions that might look like emails via regex matching
+                    const ext = emailMatch[1].split('.').pop().toLowerCase();
+                    if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
+                        result.email = emailMatch[1];
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('Error detecting email:', e);
         }
 
         // Try to find theme name from meta tags or body attributes
