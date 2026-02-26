@@ -696,14 +696,13 @@ document.addEventListener('DOMContentLoaded', function () {
             // Add active class to clicked button and corresponding content
             this.classList.add('active');
             document.getElementById(targetTab + '-tab').classList.add('active');
+
+            // Auto-load theme info when About Theme tab is clicked
+            if (targetTab === 'detector') {
+                detectThemeInfo();
+            }
         });
     });
-
-    // Detector button functionality
-    const detectBtn = document.getElementById('detectBtn');
-    if (detectBtn) {
-        detectBtn.addEventListener('click', detectThemeInfo);
-    }
 });
 
 // Theme/Store Detector Function
@@ -713,12 +712,8 @@ async function detectThemeInfo() {
     const themeNameEl = document.getElementById('themeName');
     const themeVersionEl = document.getElementById('themeVersion');
     const themePlanEl = document.getElementById('themePlan');
-    const detectBtn = document.getElementById('detectBtn');
 
     // Set loading state
-    detectBtn.disabled = true;
-    detectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Detecting...</span>';
-
     storeNameEl.textContent = 'Detecting...';
     themeIdEl.textContent = 'Detecting...';
     themeNameEl.textContent = 'Detecting...';
@@ -765,9 +760,6 @@ async function detectThemeInfo() {
         themeNameEl.textContent = 'Error';
         themeVersionEl.textContent = 'Error';
         themePlanEl.textContent = 'Error';
-    } finally {
-        detectBtn.disabled = false;
-        detectBtn.innerHTML = '<i class="fas fa-radar"></i><span>Detect Theme Info</span>';
     }
 }
 
