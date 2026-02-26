@@ -797,6 +797,10 @@ function detectShopifyTheme() {
         if (window.Shopify?.theme?.id) {
             result.themeId = window.Shopify.theme.id.toString();
         }
+        // Get schema_name from Shopify.theme object
+        if (window.Shopify?.theme?.schema_name) {
+            result.themeName = window.Shopify.theme.schema_name;
+        }
         if (window.theme?.id) {
             result.themeId = window.theme.id.toString();
         }
@@ -816,6 +820,12 @@ function detectShopifyTheme() {
             if (schemaMatch && schemaMatch[1]) {
                 result.themeVersion = schemaMatch[1];
             }
+
+            // Match schema_name for Theme Name
+            const schemaNameMatch = text.match(/"schema_name"\s*:\s*"([^"]+)"/);
+            if (schemaNameMatch && schemaNameMatch[1] && !result.themeName) {
+                result.themeName = schemaNameMatch[1];
+            }
         });
 
         // Try to find theme name from meta tags or body attributes
@@ -829,21 +839,6 @@ function detectShopifyTheme() {
         const themeMatch = bodyClasses.match(/theme-(\d+)/);
         if (themeMatch) {
             result.themeId = themeMatch[1];
-        }
-
-        // Check for Dawn theme specifically (Shopify's default theme)
-        const dawnIndicators = [
-            document.querySelector('[data-theme-name="Dawn"]'),
-            document.querySelector('[data-theme-name="dawn"]'),
-            document.querySelector('script[src*="dawn"]'),
-            document.querySelector('link[href*="dawn"]'),
-            document.body.innerHTML.includes('theme-editor-settings'),
-            document.body.innerHTML.includes('Dawn'),
-            bodyClasses.includes('dawn')
-        ];
-
-        if (dawnIndicators.some(ind => ind)) {
-            result.themeName = 'Dawn';
         }
 
         // Try to get theme info from window object
@@ -866,11 +861,6 @@ function detectShopifyTheme() {
         // Try to get from Shopify analytics or routes
         if (window.Shopify?.routes?.root) {
             // Store is confirmed to be Shopify
-        }
-
-        // If no theme name found but has theme ID, assume Dawn (most common Shopify theme)
-        if (!result.themeName && result.themeId) {
-            result.themeName = 'Dawn';
         }
 
     } catch (error) {
