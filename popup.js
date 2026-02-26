@@ -211,36 +211,50 @@ async function fetchStoreData() {
             let totalProducts = 0;
             const productCountsByCollection = {};
 
-            // First get all collection handles to count products
+            // First get all collection handles to count products (with pagination)
             for (let i = 0; i < collections.length; i++) {
                 const collection = collections[i];
-                try {
-                    const progress = 30 + Math.floor((i / collections.length) * 20);
-                    updateProgress(progress, `Counting products in ${collection.title} for automatic extraction...`);
+                let page = 1;
+                let hasMoreProducts = true;
+                let collectionProductCount = 0;
 
-                    const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json`;
-                    const productsResponse = await fetchWithTimeout(productsUrl, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    });
+                while (hasMoreProducts) {
+                    try {
+                        const progress = 30 + Math.floor((i / collections.length) * 20);
+                        updateProgress(progress, `Counting products in ${collection.title} (page ${page})...`);
 
-                    if (productsResponse.ok) {
-                        const productsData = await productsResponse.json();
-                        if (productsData && productsData.products) {
-                            const products = productsData.products;
-                            productCountsByCollection[collection.handle] = products.length;
-                            totalProducts += products.length;
+                        const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
+                        const productsResponse = await fetchWithTimeout(productsUrl, {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
+
+                        if (productsResponse.ok) {
+                            const productsData = await productsResponse.json();
+                            if (productsData && productsData.products) {
+                                collectionProductCount += productsData.products.length;
+
+                                // If we got less than 250 products, we've reached the end
+                                if (productsData.products.length < 250) {
+                                    hasMoreProducts = false;
+                                } else {
+                                    page++;
+                                }
+                            } else {
+                                hasMoreProducts = false;
+                            }
                         } else {
-                            productCountsByCollection[collection.handle] = 0;
+                            hasMoreProducts = false;
                         }
-                    } else {
-                        productCountsByCollection[collection.handle] = 0;
+                    } catch (error) {
+                        console.error(`Error counting products for collection ${collection.title}:`, error);
+                        hasMoreProducts = false;
                     }
-                } catch (error) {
-                    console.error(`Error counting products for collection ${collection.title}:`, error);
-                    productCountsByCollection[collection.handle] = 0;
                 }
+
+                productCountsByCollection[collection.handle] = collectionProductCount;
+                totalProducts += collectionProductCount;
             }
 
             // Now populate the dropdown with counts
@@ -267,46 +281,63 @@ async function fetchStoreData() {
                 collectionInfo.textContent = `Found ${collections.length} collections with ${totalProducts} total products`;
             }
 
-            // Now fetch all products for each collection
+            // Now fetch all products for each collection (with pagination - gets ALL products)
             for (let i = 0; i < collections.length; i++) {
                 const collection = collections[i];
-                try {
-                    const progress = 50 + Math.floor((i / collections.length) * 40);
-                    updateProgress(progress, `Fetching ${collection.title} products for automatic extraction...`);
+                let page = 1;
+                let hasMoreProducts = true;
 
-                    const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json`;
-                    const productsResponse = await fetchWithTimeout(productsUrl, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    });
+                while (hasMoreProducts) {
+                    try {
+                        const progress = 50 + Math.floor((i / collections.length) * 40);
+                        updateProgress(progress, `Fetching ${collection.title} products (page ${page})...`);
 
-                    if (productsResponse.ok) {
-                        const productsData = await productsResponse.json();
-
-                        if (productsData && productsData.products) {
-                            const products = productsData.products;
-
-                            // Store products for CSV export with all possible fields
-                            products.forEach(product => {
-                                // Just push the enriched raw product data to keep all variants, images, options intact
-                                const productData = {
-                                    ...product,
-                                    // Collection info
-                                    collection_title: collection.title || '',
-                                    collection_handle: collection.handle || ''
-                                };
-                                allProductsData.push(productData);
-                            });
-
-                            // Update products count
-                            if (productsCount) {
-                                productsCount.textContent = allProductsData.length;
+                        const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
+                        const productsResponse = await fetchWithTimeout(productsUrl, {
+                            headers: {
+                                'Accept': 'application/json'
                             }
+                        });
+
+                        if (productsResponse.ok) {
+                            const productsData = await productsResponse.json();
+
+                            if (productsData && productsData.products) {
+                                const products = productsData.products;
+
+                                // Store products for CSV export with all possible fields
+                                products.forEach(product => {
+                                    // Just push the enriched raw product data to keep all variants, images, options intact
+                                    const productData = {
+                                        ...product,
+                                        // Collection info
+                                        collection_title: collection.title || '',
+                                        collection_handle: collection.handle || ''
+                                    };
+                                    allProductsData.push(productData);
+                                });
+
+                                // Update products count
+                                if (productsCount) {
+                                    productsCount.textContent = allProductsData.length;
+                                }
+
+                                // If we got less than 250 products, we've reached the end
+                                if (productsData.products.length < 250) {
+                                    hasMoreProducts = false;
+                                } else {
+                                    page++;
+                                }
+                            } else {
+                                hasMoreProducts = false;
+                            }
+                        } else {
+                            hasMoreProducts = false;
                         }
+                    } catch (error) {
+                        console.error(`Error fetching products for collection ${collection.title}:`, error);
+                        hasMoreProducts = false;
                     }
-                } catch (error) {
-                    console.error(`Error fetching products for collection ${collection.title}:`, error);
                 }
             }
 
