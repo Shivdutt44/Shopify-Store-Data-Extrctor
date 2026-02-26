@@ -18,22 +18,28 @@
                 <span>Shopify Data Extractor</span>
             </div>
             <div class="tagline">Premium eCommerce Data Extraction Tool</div>
+
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="extractor">
+                    <i class="fas fa-database"></i>
+                    <span>Extractor</span>
+                </button>
+                <button class="tab-btn" data-tab="detector">
+                    <i class="fas fa-radar"></i>
+                    <span>Detector</span>
+                </button>
+            </div>
+
             <div class="current-store">
                 <i class="fas fa-link"></i>
                 <span id="storeUrlDisplay">Navigate to a Shopify store</span>
             </div>
         </div>
-        <div class="tabs-navigation">
-            <button class="tab-btn active" data-tab="extractorTab">
-                <i class="fas fa-file-export"></i> Extractor
-            </button>
-            <button class="tab-btn" data-tab="detectorTab">
-                <i class="fas fa-search-dollar"></i> Detector
-            </button>
-        </div>
 
-        <div class="tab-content active" id="extractorTab">
-            <div class="main-content">
+        <div class="main-content">
+            <!-- Extractor Tab Content -->
+            <div class="tab-content active" id="extractor-tab">
                 <div class="progress-section">
                     <div class="progress-title">Extracting Store Data</div>
                     <div class="circular-progress">
@@ -102,49 +108,45 @@
                     </div>
                 </div>
             </div>
-        </div> <!-- End extractorTab -->
 
-        <!-- DETECTOR TAB CONTENT -->
-        <div class="tab-content" id="detectorTab" style="display: none;">
-            <div class="main-content">
-                <button class="btn" id="detectThemeBtn" style="width: 100%; margin-bottom: 12px;">
-                    <i class="fas fa-search"></i>
-                    <span>Detect Theme Info</span>
-                </button>
-                <div class="progress-message" id="detectorMessage" style="margin-top: 8px; text-align: center;">Ready to
-                    detect</div>
-
-                <div class="results-section" style="margin-top: 16px;">
+            <!-- Detector Tab Content -->
+            <div class="tab-content" id="detector-tab">
+                <div class="detector-section">
                     <div class="section-title">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Store Information</span>
+                        <i class="fas fa-radar"></i>
+                        <span>Theme & Store Detector</span>
                     </div>
 
-                    <div class="detector-results" id="detectorResults">
-                        <div class="info-row">
-                            <span class="info-label">Store Name</span>
-                            <span class="info-value" id="detStoreName">-</span>
+                    <div class="detector-info">
+                        <div class="info-card">
+                            <label>Store Name</label>
+                            <div class="info-value" id="storeName">-</div>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Theme Name</span>
-                            <span class="info-value" id="detThemeName">-</span>
+                        <div class="info-card">
+                            <label>Theme ID</label>
+                            <div class="info-value" id="themeId">-</div>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Theme ID</span>
-                            <span class="info-value" id="detThemeId">-</span>
+                        <div class="info-card">
+                            <label>Theme Name</label>
+                            <div class="info-value" id="themeName">-</div>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Theme Version</span>
-                            <span class="info-value" id="detThemeVersion">-</span>
+                        <div class="info-card">
+                            <label>Theme Version</label>
+                            <div class="info-value" id="themeVersion">-</div>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Theme Plan</span>
-                            <span class="info-value plan-badge" id="detThemePlan">-</span>
+                        <div class="info-card">
+                            <label>Theme Plan</label>
+                            <div class="info-value" id="themePlan">-</div>
                         </div>
                     </div>
+
+                    <button class="btn btn-detect" id="detectBtn">
+                        <i class="fas fa-radar"></i>
+                        <span>Detect Theme Info</span>
+                    </button>
                 </div>
             </div>
-        </div> <!-- End detectorTab -->
+        </div>
 
         <div class="footer">
             <p>© 2023 Shopify Data Extractor | Premium Tool</p>

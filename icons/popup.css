@@ -76,7 +76,6 @@ body::before {
 
 .logo i {
     background: var(--accent-gradient);
-    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     font-size: 24px;
@@ -106,58 +105,6 @@ body::before {
 .current-store i {
     font-size: 12px;
 }
-
-/* --- TAB NAVIGATION --- */
-.tabs-navigation {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    background: var(--glass-bg);
-    padding: 6px;
-    border-radius: 12px;
-    border: 1px solid var(--glass-border);
-}
-
-.tab-btn {
-    flex: 1;
-    padding: 10px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 600;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-}
-
-.tab-btn:hover {
-    color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.tab-btn.active {
-    color: var(--lighter);
-    background: var(--accent-gradient);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-}
-
-.tab-content {
-    display: none;
-    flex-direction: column;
-    flex: 1;
-    overflow: hidden;
-}
-
-.tab-content.active {
-    display: flex;
-}
-
-/* ---------------------- */
 
 .main-content {
     display: flex;
@@ -221,7 +168,6 @@ body::before {
     font-size: 20px;
     font-weight: 700;
     background: var(--accent-gradient);
-    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -330,50 +276,6 @@ body::before {
     margin-top: 8px;
     text-align: center;
 }
-
-/* --- DETECTOR RESULTS --- */
-.detector-results {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-top: 8px;
-}
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-}
-
-.info-label {
-    font-size: 13px;
-    color: var(--text-secondary);
-    font-weight: 500;
-}
-
-.info-value {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-    text-align: right;
-    max-width: 65%;
-    word-break: break-word;
-    /* Important to handle long theme names/IDs gracefully */
-}
-
-.plan-badge {
-    padding: 4px 8px;
-    background: rgba(139, 92, 246, 0.2);
-    color: var(--accent);
-    border-radius: 6px;
-    font-size: 12px;
-}
-
-/* ------------------------ */
 
 .action-buttons {
     display: grid;

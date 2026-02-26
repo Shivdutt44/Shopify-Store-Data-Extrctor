@@ -87,6 +87,55 @@ body::before {
     font-weight: 400;
 }
 
+/* Tab Navigation */
+.tab-nav {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 25px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.tab-btn:hover {
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.3);
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+}
+
+.tab-btn i {
+    font-size: 14px;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
 .current-store {
     display: flex;
     align-items: center;
@@ -381,21 +430,31 @@ body::before {
 
 /* Animation for progress ring */
 @keyframes pulse {
-    0% { opacity: 0.7; }
-    50% { opacity: 1; }
-    100% { opacity: 0.7; }
+    0% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.7;
+    }
 }
 
 .pulse {
     animation: pulse 2s infinite;
 }
+
 /* Add this to your existing popup.css */
 #statsContainer {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     margin-top: 8px;
-    display: none; /* Hidden by default */
+    display: none;
+    /* Hidden by default */
 }
 
 .error-list {
@@ -406,4 +465,52 @@ body::before {
 
 .error-list li {
     margin-bottom: 4px;
+}
+
+/* Detector Section Styles */
+.detector-section {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 20px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.detector-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.info-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.info-card label {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.info-value {
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.btn-detect {
+    width: 100%;
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
+}
+
+.btn-detect:hover {
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
 }
