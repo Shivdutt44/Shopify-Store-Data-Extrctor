@@ -257,9 +257,16 @@ async function fetchStoreData() {
                 totalProducts += collectionProductCount;
             }
 
-            // Now populate the dropdown with counts
+            // Filter out collections with ZERO products
+            const collectionsWithProducts = collections.filter(c => productCountsByCollection[c.handle] > 0);
+
+            // Update currentStoreCollections to only include collections with products
+            currentStoreCollections = collectionsWithProducts;
+
+            // Now populate the dropdown with counts (ONLY collections with products)
             if (collectionSelect) {
-                collections.forEach(collection => {
+                collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
+                collectionsWithProducts.forEach(collection => {
                     const productCount = productCountsByCollection[collection.handle] || 0;
                     const option = document.createElement('option');
                     option.value = collection.handle;
@@ -476,6 +483,21 @@ function downloadCollectionsCSV() {
             selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
         fileName = `shopify_collections_${collectionTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
+    }
+
+    // Filter out collections with 0 products
+    const productsByCollection = {};
+    allProductsData.forEach(product => {
+        if (product.collection_handle) {
+            productsByCollection[product.collection_handle] = (productsByCollection[product.collection_handle] || 0) + 1;
+        }
+    });
+
+    collectionsToExport = collectionsToExport.filter(c => productsByCollection[c.handle] > 0);
+
+    if (collectionsToExport.length === 0) {
+        alert('No collections with products found');
+        return;
     }
 
     if (collectionsToExport.length === 0) {
