@@ -228,26 +228,36 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Helper to get high-res image
+    function getHighResImage(url) {
+        if (!url) return '';
+        return url.replace(/_(?:[0-9]+x[0-9]+|pico|icon|thumb|small|compact|medium|large|grande|1024x1024|2048x2048)(?=\.[a-zA-Z0-9]+(?:\?.*)?$)/i, '');
+    }
+
     function downloadCSV(products, fileName) {
-        // CSV header row
+        // Shopify standard import format + all tracked fields
         const headers = [
-            'Handle',
-            'Title',
-            'Body (HTML)',
-            'Vendor',
-            'Type',
-            'Tags',
-            'Published At',
-            'Option1 Name',
-            'Option1 Value',
-            'Variant SKU',
-            'Variant Price',
-            'Variant Compare At Price',
-            'Image Src',
-            'Collection'
+            'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags',
+            'Published', 'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value',
+            'Option3 Name', 'Option3 Value', 'Variant SKU', 'Variant Grams',
+            'Variant Inventory Tracker', 'Variant Inventory Qty', 'Variant Inventory Policy',
+            'Variant Fulfillment Service', 'Variant Price', 'Variant Compare At Price',
+            'Variant Requires Shipping', 'Variant Taxable', 'Variant Barcode',
+            'Image Src', 'Image Position', 'Image Alt Text', 'Gift Card',
+            'SEO Title', 'SEO Description',
+            'Google Shopping / Google Product Category', 'Google Shopping / Gender',
+            'Google Shopping / Age Group', 'Google Shopping / MPN',
+            'Google Shopping / Condition', 'Google Shopping / Custom Product',
+            'Google Shopping / Custom Label 0', 'Google Shopping / Custom Label 1',
+            'Google Shopping / Custom Label 2', 'Google Shopping / Custom Label 3',
+            'Google Shopping / Custom Label 4', 'Variant Image', 'Variant Weight Unit',
+            'Variant Tax Code', 'Cost per item', 'Price / International',
+            'Compare At Price / International', 'Status',
+            // Our extra fields
+            'Published At', 'Created At', 'Updated At', 'Template Suffix',
+            'Published Scope', 'Collection Title', 'Collection Handle'
         ];
 
-        // Process all products into CSV rows
         const csvRows = [];
         csvRows.push(headers.join(','));
 
@@ -259,22 +269,54 @@ document.addEventListener('DOMContentLoaded', function () {
             for (let i = 0; i < maxRows; i++) {
                 const variant = i < variants.length ? variants[i] : {};
                 const image = i < images.length ? images[i] : null;
+                const variantImage = variant.featured_image ? variant.featured_image.src : '';
 
                 const row = [
                     `"${escapeCsvValue(product.handle)}"`,
                     `"${escapeCsvValue(product.title)}"`,
                     `"${escapeCsvValue(product.body_html)}"`,
                     `"${escapeCsvValue(product.vendor)}"`,
-                    `"${escapeCsvValue(product.product_type)}"`,
+                    `""`, // Product Category
+                    `"${escapeCsvValue(product.product_type || product.type)}"`, // Type
                     `"${escapeCsvValue(product.tags)}"`,
-                    `"${escapeCsvValue(product.published_at)}"`,
+                    product.published_at ? 'true' : 'false',
                     `"${escapeCsvValue(product.options && product.options[0] ? product.options[0].name : '')}"`,
                     `"${escapeCsvValue(variant.option1)}"`,
+                    `"${escapeCsvValue(product.options && product.options[1] ? product.options[1].name : '')}"`,
+                    `"${escapeCsvValue(variant.option2)}"`,
+                    `"${escapeCsvValue(product.options && product.options[2] ? product.options[2].name : '')}"`,
+                    `"${escapeCsvValue(variant.option3)}"`,
                     `"${escapeCsvValue(variant.sku)}"`,
-                    variant.price || (i < variants.length ? '0.00' : ''),
-                    variant.compare_at_price || (i < variants.length ? '0.00' : ''),
-                    `"${escapeCsvValue(image?.src)}"`,
-                    `"${escapeCsvValue(product.collection_title)}"`
+                    variant.grams !== undefined ? variant.grams : (i < variants.length ? '0' : ''),
+                    `"${escapeCsvValue(variant.inventory_management || '')}"`,
+                    variant.inventory_quantity !== undefined ? variant.inventory_quantity : (i < variants.length ? '0' : ''),
+                    `"${escapeCsvValue(variant.inventory_policy || (i < variants.length ? 'deny' : ''))}"`,
+                    `"${escapeCsvValue(variant.fulfillment_service || (i < variants.length ? 'manual' : ''))}"`,
+                    variant.price !== undefined && variant.price !== null ? variant.price : (i < variants.length ? '0.00' : ''),
+                    variant.compare_at_price || '',
+                    variant.requires_shipping !== undefined ? (variant.requires_shipping ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                    variant.taxable !== undefined ? (variant.taxable ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                    `"${escapeCsvValue(variant.barcode)}"`,
+                    `"${escapeCsvValue(getHighResImage(image?.src))}"`, // Image Src
+                    image ? String(i + 1) : '',
+                    `"${escapeCsvValue(image && image.alt ? image.alt : (image ? product.title : ''))}"`, // Image Alt Text
+                    product.gift_card ? 'true' : 'false',
+                    `"${escapeCsvValue(product.metafields_global_title_tag || '')}"`,
+                    `"${escapeCsvValue(product.metafields_global_description_tag || '')}"`,
+                    `""`, `""`, `""`, `""`, `""`, `""`, `""`, `""`, `""`, `""`, `""`, // Google Shopping
+                    `"${escapeCsvValue(getHighResImage(variantImage))}"`, // Variant Image
+                    `"${escapeCsvValue(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
+                    `""`, `""`, `""`, `""`, // Tax code, Cost, Price Int...
+                    `"${escapeCsvValue(product.status || 'active')}"`, // Status
+
+                    // Extra info
+                    `"${escapeCsvValue(product.published_at)}"`,
+                    `"${escapeCsvValue(product.created_at)}"`,
+                    `"${escapeCsvValue(product.updated_at)}"`,
+                    `"${escapeCsvValue(product.template_suffix)}"`,
+                    `"${escapeCsvValue(product.published_scope)}"`,
+                    `"${escapeCsvValue(product.collection_title)}"`,
+                    `"${escapeCsvValue(product.collection_handle)}"`
                 ];
 
                 csvRows.push(row.join(','));
