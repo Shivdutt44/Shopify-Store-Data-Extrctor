@@ -701,6 +701,7 @@ async function detectThemeInfo() {
     const themeVersionEl = document.getElementById('themeVersion');
     const themePlanEl = document.getElementById('themePlan');
     const platformEl = document.getElementById('platform');
+    const mobileEl = document.getElementById('mobile');
 
     // Set loading state
     storeNameEl.textContent = 'Detecting...';
@@ -709,6 +710,7 @@ async function detectThemeInfo() {
     themeVersionEl.textContent = 'Detecting...';
     themePlanEl.textContent = 'Detecting...';
     if (platformEl) platformEl.textContent = 'Detecting...';
+    if (mobileEl) mobileEl.textContent = 'Detecting...';
 
     try {
         // Get current tab
@@ -747,6 +749,7 @@ async function detectThemeInfo() {
                 themePlanEl.textContent = 'Basic';
             }
             if (platformEl) platformEl.textContent = themeData.platform || 'Shopify';
+            if (mobileEl) mobileEl.textContent = themeData.mobile || 'Not Found';
         } else {
             // Fallback: use store URL as store name
             storeNameEl.textContent = storeDomain;
@@ -755,6 +758,7 @@ async function detectThemeInfo() {
             themeVersionEl.textContent = 'N/A';
             themePlanEl.textContent = 'N/A';
             if (platformEl) platformEl.textContent = 'Shopify';
+            if (mobileEl) mobileEl.textContent = 'Not Found';
         }
     } catch (error) {
         console.error('Error detecting theme:', error);
@@ -764,6 +768,7 @@ async function detectThemeInfo() {
         themeVersionEl.textContent = 'Error';
         themePlanEl.textContent = 'Error';
         if (platformEl) platformEl.textContent = 'Error';
+        if (mobileEl) mobileEl.textContent = 'Error';
     }
 }
 
@@ -775,7 +780,8 @@ function detectShopifyTheme() {
         themeName: null,
         themeVersion: null,
         themePlan: null,
-        platform: 'Shopify'
+        platform: 'Shopify',
+        mobile: null
     };
 
     try {
@@ -838,6 +844,53 @@ function detectShopifyTheme() {
                 }
             }
         });
+
+        // Detect Store Mobile/Phone Number
+        try {
+            // 1. Check for tel: links
+            const telLinks = document.querySelectorAll('a[href^="tel:"]');
+            if (telLinks.length > 0) {
+                result.mobile = telLinks[0].href.replace('tel:', '').trim();
+            }
+
+            if (!result.mobile) {
+                // 2. Look for obvious phone-related meta tags or JSON-LD
+                const scriptTags = document.querySelectorAll('script[type="application/ld+json"]');
+                for (let script of scriptTags) {
+                    try {
+                        const json = JSON.parse(script.innerText);
+                        if (json && json.telephone) {
+                            result.mobile = json.telephone;
+                            break;
+                        }
+                        // Also check within array format
+                        if (Array.isArray(json)) {
+                            const match = json.find(j => j.telephone);
+                            if (match) {
+                                result.mobile = match.telephone;
+                                break;
+                            }
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            if (!result.mobile) {
+                // 3. RegEx search the text body for common phone formats, prioritizing header/footer
+                const docText = (document.querySelector('header')?.innerText || '') + ' ' + (document.querySelector('footer')?.innerText || '');
+                // Basic regex for common formats like (123) 456-7890, 123-456-7890, +1 234 567 8900
+                const phoneMatch = docText.match(/(?:(?:\+?1\s*(?:[.-]\s*)?)?(?:\(\s*([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9])\s*\)|([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9]))\s*(?:[.-]\s*)?)?([2-9]1[02-9]|[2-9][02-9]1|[2-9][02-9]{2})\s*(?:[.-]\s*)?([0-9]{4})(?:\s*(?:#|x\.?|ext\.?|extension)\s*(\d+))?/i);
+                if (phoneMatch && phoneMatch[0]) {
+                    // Make sure it truly looks like a number and not random digits
+                    let p = phoneMatch[0].trim();
+                    if (p.replace(/\D/g, '').length >= 10) {
+                        result.mobile = p;
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('Error detecting mobile:', e);
+        }
 
         // Try to find theme name from meta tags or body attributes
         const themeMeta = document.querySelector('meta[name="theme"]');
