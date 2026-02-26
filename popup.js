@@ -289,54 +289,12 @@ async function fetchStoreData() {
 
                             // Store products for CSV export with all possible fields
                             products.forEach(product => {
+                                // Just push the enriched raw product data to keep all variants, images, options intact
                                 const productData = {
-                                    // Basic product info
-                                    handle: product.handle || '',
-                                    title: product.title || '',
-                                    body_html: product.body_html || '',
-                                    vendor: product.vendor || '',
-                                    product_type: product.product_type || '',
-                                    tags: product.tags || '',
-                                    published_at: product.published_at || '',
-                                    created_at: product.created_at || '',
-                                    updated_at: product.updated_at || '',
-                                    template_suffix: product.template_suffix || '',
-                                    published_scope: product.published_scope || '',
-                                    status: product.status || 'active',
-
-                                    // SEO fields
-                                    metafields_global_title_tag: product.metafields_global_title_tag || '',
-                                    metafields_global_description_tag: product.metafields_global_description_tag || '',
-
-                                    // Options
-                                    options: product.options || [],
-
-                                    // Variants
-                                    variants: product.variants || [],
-
-                                    // Images
-                                    images: product.images || [],
-                                    image: product.image || null,
-
+                                    ...product,
                                     // Collection info
                                     collection_title: collection.title || '',
-                                    collection_handle: collection.handle || '',
-
-                                    // Additional fields
-                                    requires_shipping: product.requires_shipping || false,
-                                    taxable: product.taxable || false,
-                                    gift_card: product.gift_card || false,
-                                    inventory_quantity: product.variants?.[0]?.inventory_quantity || 0,
-                                    inventory_management: product.variants?.[0]?.inventory_management || '',
-                                    inventory_policy: product.variants?.[0]?.inventory_policy || 'deny',
-                                    fulfillment_service: product.variants?.[0]?.fulfillment_service || 'manual',
-                                    weight: product.variants?.[0]?.weight || 0,
-                                    weight_unit: product.variants?.[0]?.weight_unit || 'kg',
-                                    price: product.variants?.[0]?.price || '0.00',
-                                    compare_at_price: product.variants?.[0]?.compare_at_price || '0.00',
-                                    sku: product.variants?.[0]?.sku || '',
-                                    barcode: product.variants?.[0]?.barcode || '',
-                                    grams: product.variants?.[0]?.grams || 0
+                                    collection_handle: collection.handle || ''
                                 };
                                 allProductsData.push(productData);
                             });
@@ -453,13 +411,114 @@ function showResultsPage() {
 }
 
 function downloadCSV() {
+    const exportTypeSelect = document.getElementById('exportType');
+    const exportType = exportTypeSelect ? exportTypeSelect.value : 'products';
+
+    if (exportType === 'collections') {
+        downloadCollectionsCSV();
+    } else {
+        downloadProductsCSV();
+    }
+}
+
+function downloadCollectionsCSV() {
+    if (currentStoreCollections.length === 0) {
+        alert('No collections available to download');
+        return;
+    }
+
+    const collectionSelect = document.getElementById('collectionSelect');
+    const selectedCollectionHandle = collectionSelect ? collectionSelect.value : 'all';
+
+    let collectionsToExport = currentStoreCollections;
+    let fileName = `shopify_collections_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    if (selectedCollectionHandle !== 'all') {
+        collectionsToExport = currentStoreCollections.filter(
+            c => c.handle === selectedCollectionHandle
+        );
+
+        const selectedCollection = currentStoreCollections.find(
+            c => c.handle === selectedCollectionHandle
+        );
+        const collectionTitle = selectedCollection ?
+            selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
+            selectedCollectionHandle;
+        fileName = `shopify_collections_${collectionTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
+    }
+
+    if (collectionsToExport.length === 0) {
+        alert('No collections found for the selected option');
+        return;
+    }
+
+    // Shopify Collections CSV format
+    const headers = [
+        'Handle',
+        'Title',
+        'Body (HTML)',
+        'Published',
+        'Image Src',
+        'Image Alt Text',
+        'Sort Order',
+        'Template Suffix',
+        'Meta Title',
+        'Meta Description',
+        'Url Handle'
+    ];
+
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    collectionsToExport.forEach(collection => {
+        const row = [
+            `"${escapeCsvValue(collection.handle || '')}"`,
+            `"${escapeCsvValue(collection.title || '')}"`,
+            `"${escapeCsvValue(collection.body_html || '')}"`,
+            collection.published_at ? 'TRUE' : 'FALSE',
+            `"${escapeCsvValue(collection.image?.src || '')}"`,
+            `"${escapeCsvValue(collection.image?.alt || '')}"`,
+            `"${escapeCsvValue(collection.sort_order || 'best-selling')}"`,
+            `"${escapeCsvValue(collection.template_suffix || '')}"`,
+            `"${escapeCsvValue(collection.metafields_global_title_tag || '')}"`,
+            `"${escapeCsvValue(collection.metafields_global_description_tag || '')}"`,
+            `"${escapeCsvValue(collection.handle || '')}"`
+        ];
+
+        csvRows.push(row.join(','));
+    });
+
+    // Create CSV file with BOM for UTF-8
+    const csvContent = "\uFEFF" + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    // Create download link
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+
+    // Append to body (required for Firefox)
+    document.body.appendChild(link);
+
+    // Trigger download
+    link.click();
+
+    // Clean up
+    document.body.removeChild(link);
+    setTimeout(() => {
+        URL.revokeObjectURL(url);
+    }, 100);
+}
+
+function downloadProductsCSV() {
     if (allProductsData.length === 0) {
         alert('No product data available to download');
         return;
     }
 
     const collectionSelect = document.getElementById('collectionSelect');
-    const selectedCollectionHandle = collectionSelect.value;
+    const selectedCollectionHandle = collectionSelect ? collectionSelect.value : 'all';
 
     let productsToExport = allProductsData;
     let fileName = `shopify_products_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -490,7 +549,7 @@ function downloadCSV() {
         return url.replace(/_(?:[0-9]+x[0-9]+|pico|icon|thumb|small|compact|medium|large|grande|1024x1024|2048x2048)(?=\.[a-zA-Z0-9]+(?:\?.*)?$)/i, '');
     }
 
-    // Shopify standard import format + all tracked fields
+    // Shopify standard import format - optimized for direct import
     const headers = [
         'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags',
         'Published', 'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value',
@@ -507,10 +566,7 @@ function downloadCSV() {
         'Google Shopping / Custom Label 2', 'Google Shopping / Custom Label 3',
         'Google Shopping / Custom Label 4', 'Variant Image', 'Variant Weight Unit',
         'Variant Tax Code', 'Cost per item', 'Price / International',
-        'Compare At Price / International', 'Status',
-        // Our extra fields
-        'Published At', 'Created At', 'Updated At', 'Template Suffix',
-        'Published Scope', 'Collection Title', 'Collection Handle'
+        'Compare At Price / International', 'Status', 'Collection'
     ];
 
     const csvRows = [];
@@ -531,8 +587,8 @@ function downloadCSV() {
                 `"${escapeCsvValue(product.title)}"`,
                 `"${escapeCsvValue(product.body_html)}"`,
                 `"${escapeCsvValue(product.vendor)}"`,
-                `""`, // Product Category
-                `"${escapeCsvValue(product.product_type || product.type)}"`, // Type
+                `"${escapeCsvValue(product.product_type || '')}"`, // Product Category
+                `"${escapeCsvValue(product.product_type || '')}"`, // Type
                 `"${escapeCsvValue(product.tags)}"`,
                 product.published_at ? 'true' : 'false',
                 `"${escapeCsvValue(product.options && product.options[0] ? product.options[0].name : '')}"`,
@@ -563,15 +619,7 @@ function downloadCSV() {
                 `"${escapeCsvValue(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
                 `""`, `""`, `""`, `""`, // Tax code, Cost, Price Int...
                 `"${escapeCsvValue(product.status || 'active')}"`, // Status
-
-                // Extra info
-                `"${escapeCsvValue(product.published_at)}"`,
-                `"${escapeCsvValue(product.created_at)}"`,
-                `"${escapeCsvValue(product.updated_at)}"`,
-                `"${escapeCsvValue(product.template_suffix)}"`,
-                `"${escapeCsvValue(product.published_scope)}"`,
-                `"${escapeCsvValue(product.collection_title)}"`,
-                `"${escapeCsvValue(product.collection_handle)}"`
+                `"${escapeCsvValue(product.collection_title || '')}"` // Collection - Shopify will link products to this collection
             ];
 
             csvRows.push(row.join(','));
@@ -665,6 +713,21 @@ function resetExtractButton() {
         extractBtn.innerHTML = '<i class="fas fa-bolt"></i><span>Extract Data</span>';
     }
     isExtracting = false;
+}
+
+// Fetch helper with timeout to avoid hanging requests
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 8000 } = options;
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
 }
 
 // Tab Switching Functionality

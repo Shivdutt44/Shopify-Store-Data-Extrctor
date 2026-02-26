@@ -75,6 +75,14 @@
                 </div>
 
                 <div class="results-section">
+                    <div class="export-type-selector">
+                        <label for="exportType"><i class="fas fa-file-export"></i> Export Type:</label>
+                        <select id="exportType">
+                            <option value="products">Products CSV (Import to add products)</option>
+                            <option value="collections">Collections CSV (Import to create collections)</option>
+                        </select>
+                    </div>
+
                     <div class="collection-selector" id="collectionSelector" style="display: none;">
                         <select id="collectionSelect">
                             <option value="all">All Collections (All Products)</option>

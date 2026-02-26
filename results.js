@@ -276,8 +276,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     `"${escapeCsvValue(product.title)}"`,
                     `"${escapeCsvValue(product.body_html)}"`,
                     `"${escapeCsvValue(product.vendor)}"`,
-                    `""`, // Product Category
-                    `"${escapeCsvValue(product.product_type || product.type)}"`, // Type
+                    `"${escapeCsvValue(product.product_type || '')}"`, // Product Category
+                    `"${escapeCsvValue(product.product_type || '')}"`, // Type
                     `"${escapeCsvValue(product.tags)}"`,
                     product.published_at ? 'true' : 'false',
                     `"${escapeCsvValue(product.options && product.options[0] ? product.options[0].name : '')}"`,
