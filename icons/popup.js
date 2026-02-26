@@ -5,6 +5,30 @@ let currentStoreUrl = '';
 let isExtracting = false;
 
 document.addEventListener('DOMContentLoaded', function () {
+    // --- Tab Switching Logic ---
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active class from all tabs and contents
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            // Add active class to clicked tab and its content
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-tab');
+            document.getElementById(targetId).classList.add('active');
+
+            // Handle display property directly to override default inline styles if any
+            tabContents.forEach(c => {
+                c.style.display = 'none';
+            });
+            document.getElementById(targetId).style.display = 'flex';
+        });
+    });
+    // ---------------------------
+
     // Use existing stats container from HTML
     const statsContainer = document.getElementById('statsContainer');
 
@@ -56,7 +80,169 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     document.getElementById('viewResultsBtn').addEventListener('click', showResultsPage);
     document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
+
+    // --- Detector DOM Elements ---
+    const detectThemeBtn = document.getElementById('detectThemeBtn');
+    const detectorMessage = document.getElementById('detectorMessage');
+    const detStoreName = document.getElementById('detStoreName');
+    const detThemeName = document.getElementById('detThemeName');
+    const detThemeId = document.getElementById('detThemeId');
+    const detThemeVersion = document.getElementById('detThemeVersion');
+    const detThemePlan = document.getElementById('detThemePlan');
+
+    let isDetecting = false;
+
+    // Abstracted Theme Detection Function to allow auto-run
+    async function runThemeDetection() {
+        if (isDetecting) return;
+
+        isDetecting = true;
+        if (detectThemeBtn) {
+            detectThemeBtn.disabled = true;
+            detectThemeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Detecting...</span>';
+        }
+        detectorMessage.textContent = 'Injecting script to read Shopify objects...';
+        detectorMessage.style.color = 'var(--text-secondary)';
+
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+            if (!tab || (!tab.url.startsWith('http') && !tab.url.startsWith('https'))) {
+                throw new Error("Cannot detect theme on this page (must be a web page).");
+            }
+
+            // Execute detection logic on the page
+            chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: detectShopifyInfoOnPage
+            }, (results) => {
+                isDetecting = false;
+                if (detectThemeBtn) {
+                    detectThemeBtn.disabled = false;
+                    detectThemeBtn.innerHTML = '<i class="fas fa-search"></i><span>Detect Theme Info</span>';
+                }
+
+                if (chrome.runtime.lastError || !results || !results[0]) {
+                    detectorMessage.textContent = 'Error: ' + (chrome.runtime.lastError?.message || 'Failed to execute script');
+                    detectorMessage.style.color = 'var(--error)';
+                    return;
+                }
+
+                const data = results[0].result;
+
+                if (data && data.isShopify) {
+                    detectorMessage.textContent = 'Shopify store detected successfully!';
+                    detectorMessage.style.color = 'var(--success)';
+
+                    detStoreName.textContent = data.storeName || 'Unknown';
+                    detThemeName.textContent = data.themeName || 'Unknown';
+                    detThemeId.textContent = data.themeId || 'Unknown';
+                    detThemeVersion.textContent = data.themeVersion || 'Not found';
+
+                    // Style the plan badge
+                    detThemePlan.textContent = data.themePlan || 'Custom / Unknown';
+                    if (data.themePlan === 'Theme Store (Free or Paid)') {
+                        detThemePlan.style.background = 'rgba(16, 185, 129, 0.2)'; // success tint
+                        detThemePlan.style.color = 'var(--success)';
+                    } else {
+                        detThemePlan.style.background = 'rgba(139, 92, 246, 0.2)'; // accent tint
+                        detThemePlan.style.color = 'var(--accent)';
+                    }
+                } else {
+                    detectorMessage.textContent = 'This does not appear to be a Shopify store.';
+                    detectorMessage.style.color = 'var(--error)';
+
+                    detStoreName.textContent = '-';
+                    detThemeName.textContent = '-';
+                    detThemeId.textContent = '-';
+                    detThemeVersion.textContent = '-';
+                    detThemePlan.textContent = '-';
+                }
+            });
+
+        } catch (err) {
+            isDetecting = false;
+            if (detectThemeBtn) {
+                detectThemeBtn.disabled = false;
+                detectThemeBtn.innerHTML = '<i class="fas fa-search"></i><span>Detect Theme Info</span>';
+            }
+            detectorMessage.textContent = err.message;
+            detectorMessage.style.color = 'var(--error)';
+        }
+    }
+
+    // Auto-run detection on load
+    runThemeDetection();
+
+    // Theme Detection Event Listener
+    if (detectThemeBtn) {
+        detectThemeBtn.addEventListener('click', runThemeDetection);
+    }
 });
+
+// Injected Detection Function (runs in page context)
+function detectShopifyInfoOnPage() {
+    try {
+        const isShopify = window.Shopify !== undefined || document.querySelector('script[src*="shopify.com"]') !== null;
+
+        if (!isShopify) {
+            return { isShopify: false };
+        }
+
+        let storeName = document.title.split('-')[0].trim();
+        if (window.Shopify && window.Shopify.shop) {
+            storeName = window.Shopify.shop;
+        }
+
+        let themeName = 'Unknown';
+        let themeId = 'Unknown';
+        let themeStoreId = null;
+        let themeVersion = 'Not found';
+
+        // Target Shopify.theme object aggressively
+        if (window.Shopify && window.Shopify.theme) {
+            themeName = window.Shopify.theme.schema_name || window.Shopify.theme.name || themeName;
+            themeId = window.Shopify.theme.id || themeId;
+            themeStoreId = window.Shopify.theme.theme_store_id;
+
+            // Try extracting version from name if embedded (e.g. "Dawn 10.0.0" or "MyTheme v2.0")
+            const versionRegex = /v?[0-9]+(\.[0-9]+)+/;
+            const match = themeName.match(versionRegex);
+            if (match) themeVersion = match[0];
+        }
+
+        // Secondary fallback for name/version from BOOMR if Shopify.theme was lacking info
+        if (window.BOOMR && window.BOOMR.themeName) {
+            if (themeName === 'Unknown') themeName = window.BOOMR.themeName;
+            if (themeVersion === 'Not found') {
+                const versionRegex = /[0-9]+(\.[0-9]+)+/;
+                const match = window.BOOMR.themeName.match(versionRegex);
+                if (match) themeVersion = match[0];
+            }
+        }
+
+        // Final fallback for name from window.theme
+        if (themeName === 'Unknown' && window.theme && window.theme.name) {
+            themeName = window.theme.name;
+        }
+
+        let themePlan = 'Custom / Unpublished';
+        if (themeStoreId) {
+            themePlan = 'Theme Store (Free or Paid)'; // It has a store ID, meaning it's linked to Shopify store
+        }
+
+        return {
+            isShopify: true,
+            storeName: storeName,
+            themeName: themeName,
+            themeId: themeId,
+            themeVersion: themeVersion,
+            themePlan: themePlan
+        };
+    } catch (e) {
+        return { isShopify: true, error: e.message };
+    }
+}
 
 function checkShopifyStore(url) {
     // Check if the current page is a Shopify store
