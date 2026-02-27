@@ -464,6 +464,9 @@ function showResultsPage() {
     });
 }
 
+// Maximum CSV file size (14MB to stay safely under Shopify's 15MB limit)
+const MAX_CSV_SIZE = 14 * 1024 * 1024; // 14MB in bytes
+
 function downloadCSV() {
     if (allProductsData.length === 0) {
         alert('No product data available to download');
@@ -474,7 +477,7 @@ function downloadCSV() {
     const selectedCollectionHandle = collectionSelect.value;
 
     let productsToExport = allProductsData;
-    let fileName = `shopify_products_${new Date().toISOString().slice(0, 10)}.csv`;
+    let fileNameBase = `shopify_products_${new Date().toISOString().slice(0, 10)}`;
 
     if (selectedCollectionHandle !== 'all') {
         productsToExport = allProductsData.filter(
@@ -488,7 +491,7 @@ function downloadCSV() {
         const collectionTitle = selectedCollection ?
             selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
-        fileName = `shopify_products_${collectionTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
+        fileNameBase = `shopify_products_${collectionTitle}_${new Date().toISOString().slice(0, 10)}`;
     }
 
     if (productsToExport.length === 0) {
@@ -525,9 +528,8 @@ function downloadCSV() {
         'Published Scope', 'Collection Title', 'Collection Handle'
     ];
 
-    const csvRows = [];
-    csvRows.push(headers.join(','));
-
+    // Generate all CSV rows first
+    const allRows = [];
     productsToExport.forEach(product => {
         const variants = product.variants && product.variants.length > 0 ? product.variants : [{}];
         const images = product.images || [];
@@ -586,28 +588,73 @@ function downloadCSV() {
                 `"${escapeCsvValue(product.collection_handle)}"`
             ];
 
-            csvRows.push(row.join(','));
+            allRows.push(row.join(','));
         }
     });
 
-    // Create CSV file with BOM for UTF-8
-    const csvContent = "\uFEFF" + csvRows.join('\n');
+    // Calculate total size
+    const headerRow = headers.join(',');
+    const totalContent = "\uFEFF" + headerRow + '\n' + allRows.join('\n');
+    const totalSize = new Blob([totalContent]).size;
+
+    // If under limit, download as single file
+    if (totalSize <= MAX_CSV_SIZE) {
+        downloadCSVChunk([headerRow, ...allRows], `${fileNameBase}.csv`);
+        return;
+    }
+
+    // Split into multiple files
+    const chunks = [];
+    let currentChunk = [headerRow];
+    let currentSize = new Blob(["\uFEFF" + headerRow]).size;
+
+    for (const row of allRows) {
+        const rowSize = new Blob([row]).size + 1; // +1 for newline
+
+        if (currentSize + rowSize > MAX_CSV_SIZE && currentChunk.length > 1) {
+            // Save current chunk and start new one
+            chunks.push(currentChunk);
+            currentChunk = [headerRow, row];
+            currentSize = new Blob(["\uFEFF" + headerRow + '\n' + row]).size;
+        } else {
+            currentChunk.push(row);
+            currentSize += rowSize;
+        }
+    }
+
+    // Don't forget the last chunk
+    if (currentChunk.length > 1) {
+        chunks.push(currentChunk);
+    }
+
+    // Download all chunks
+    chunks.forEach((chunk, index) => {
+        const chunkFileName = `${fileNameBase}_part${index + 1}of${chunks.length}.csv`;
+        setTimeout(() => {
+            downloadCSVChunk(chunk, chunkFileName);
+        }, index * 500); // Stagger downloads to avoid browser issues
+    });
+
+    // Show notification about multiple files
+    if (chunks.length > 1) {
+        setTimeout(() => {
+            alert(`CSV file was split into ${chunks.length} parts due to Shopify's 15MB import limit.\n\nPlease import each part separately into Shopify.`);
+        }, chunks.length * 500 + 100);
+    }
+}
+
+function downloadCSVChunk(rows, fileName) {
+    const csvContent = "\uFEFF" + rows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
 
-    // Create download link
     const link = document.createElement('a');
     link.setAttribute('href', url);
     link.setAttribute('download', fileName);
-
-    // Append to body (required for Firefox)
     document.body.appendChild(link);
-
-    // Trigger download
     link.click();
-
-    // Clean up
     document.body.removeChild(link);
+
     setTimeout(() => {
         URL.revokeObjectURL(url);
     }, 100);

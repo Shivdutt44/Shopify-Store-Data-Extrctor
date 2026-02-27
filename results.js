@@ -234,6 +234,9 @@ document.addEventListener('DOMContentLoaded', function () {
         return url.replace(/_(?:[0-9]+x[0-9]+|pico|icon|thumb|small|compact|medium|large|grande|1024x1024|2048x2048)(?=\.[a-zA-Z0-9]+(?:\?.*)?$)/i, '');
     }
 
+    // Maximum CSV file size (14MB to stay safely under Shopify's 15MB limit)
+    const MAX_CSV_SIZE = 14 * 1024 * 1024; // 14MB in bytes
+
     function downloadCSV(products, fileName) {
         // Shopify standard import format + all tracked fields
         const headers = [
@@ -258,9 +261,8 @@ document.addEventListener('DOMContentLoaded', function () {
             'Published Scope', 'Collection Title', 'Collection Handle'
         ];
 
-        const csvRows = [];
-        csvRows.push(headers.join(','));
-
+        // Generate all CSV rows first
+        const allRows = [];
         products.forEach(product => {
             const variants = product.variants && product.variants.length > 0 ? product.variants : [{}];
             const images = product.images || [];
@@ -319,28 +321,76 @@ document.addEventListener('DOMContentLoaded', function () {
                     `"${escapeCsvValue(product.collection_handle)}"`
                 ];
 
-                csvRows.push(row.join(','));
+                allRows.push(row.join(','));
             }
         });
 
-        // Create CSV file with BOM for UTF-8
-        const csvContent = "\uFEFF" + csvRows.join('\n');
+        // Calculate total size
+        const headerRow = headers.join(',');
+        const totalContent = "\uFEFF" + headerRow + '\n' + allRows.join('\n');
+        const totalSize = new Blob([totalContent]).size;
+
+        // Extract base filename (remove .csv extension if present)
+        const fileNameBase = fileName.replace(/\.csv$/i, '');
+
+        // If under limit, download as single file
+        if (totalSize <= MAX_CSV_SIZE) {
+            downloadCSVChunk([headerRow, ...allRows], fileName);
+            return;
+        }
+
+        // Split into multiple files
+        const chunks = [];
+        let currentChunk = [headerRow];
+        let currentSize = new Blob(["\uFEFF" + headerRow]).size;
+
+        for (const row of allRows) {
+            const rowSize = new Blob([row]).size + 1; // +1 for newline
+
+            if (currentSize + rowSize > MAX_CSV_SIZE && currentChunk.length > 1) {
+                // Save current chunk and start new one
+                chunks.push(currentChunk);
+                currentChunk = [headerRow, row];
+                currentSize = new Blob(["\uFEFF" + headerRow + '\n' + row]).size;
+            } else {
+                currentChunk.push(row);
+                currentSize += rowSize;
+            }
+        }
+
+        // Don't forget the last chunk
+        if (currentChunk.length > 1) {
+            chunks.push(currentChunk);
+        }
+
+        // Download all chunks
+        chunks.forEach((chunk, index) => {
+            const chunkFileName = `${fileNameBase}_part${index + 1}of${chunks.length}.csv`;
+            setTimeout(() => {
+                downloadCSVChunk(chunk, chunkFileName);
+            }, index * 500); // Stagger downloads to avoid browser issues
+        });
+
+        // Show notification about multiple files
+        if (chunks.length > 1) {
+            setTimeout(() => {
+                alert(`CSV file was split into ${chunks.length} parts due to Shopify's 15MB import limit.\n\nPlease import each part separately into Shopify.`);
+            }, chunks.length * 500 + 100);
+        }
+    }
+
+    function downloadCSVChunk(rows, fileName) {
+        const csvContent = "\uFEFF" + rows.join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
 
-        // Create download link
         const link = document.createElement('a');
         link.setAttribute('href', url);
         link.setAttribute('download', fileName);
-
-        // Append to body (required for Firefox)
         document.body.appendChild(link);
-
-        // Trigger download
         link.click();
-
-        // Clean up
         document.body.removeChild(link);
+
         setTimeout(() => {
             URL.revokeObjectURL(url);
         }, 100);
