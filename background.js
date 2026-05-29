@@ -3,6 +3,221 @@ chrome.runtime.onInstalled.addListener(() => {
     console.log('Shopify Data Extractor installed');
 });
 
+// ── Background IndexedDB (same DB as popup) ──────────────────────────────────
+const BG_DB_NAME = 'ShopifyScraperDB';
+const BG_DB_VER  = 1;
+
+function bgOpenDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(BG_DB_NAME, BG_DB_VER);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror  = () => reject(req.error);
+        req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('products')) {
+                const ps = db.createObjectStore('products', { keyPath: 'uid' });
+                ps.createIndex('storeUrl', 'storeUrl', { unique: false });
+                ps.createIndex('collectionHandle', 'collectionHandle', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('scraped_stores')) {
+                const ss = db.createObjectStore('scraped_stores', { keyPath: 'storeUrl' });
+                ss.createIndex('scrapedAt', 'scrapedAt', { unique: false });
+            }
+        };
+    });
+}
+
+async function bgSaveProducts(storeUrl, products) {
+    const db = await bgOpenDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('products', 'readwrite');
+        const store = tx.objectStore('products');
+        for (const p of products) {
+            store.put({ uid: `${storeUrl}__${p.id}`, storeUrl, collectionHandle: p.collection_handle || 'all', ...p, savedAt: Date.now() });
+        }
+        tx.oncomplete = () => resolve(true);
+        tx.onerror    = () => reject(tx.error);
+    });
+}
+
+async function bgGetExistingProductIds(storeUrl) {
+    const db = await bgOpenDB();
+    return new Promise((resolve, reject) => {
+        const tx  = db.transaction('products', 'readonly');
+        const req = tx.objectStore('products').index('storeUrl').getAll(storeUrl);
+        req.onsuccess = () => resolve(new Set(req.result.map(p => String(p.id))));
+        req.onerror   = () => reject(req.error);
+    });
+}
+
+async function bgClearProducts(storeUrl) {
+    const db = await bgOpenDB();
+    return new Promise((resolve, reject) => {
+        const tx  = db.transaction('products', 'readwrite');
+        const req = tx.objectStore('products').index('storeUrl').getAllKeys(storeUrl);
+        req.onsuccess = () => { for (const k of req.result) tx.objectStore('products').delete(k); };
+        tx.oncomplete = () => resolve(true);
+        tx.onerror    = () => reject(tx.error);
+    });
+}
+
+async function bgGetScrapedStore(storeUrl) {
+    const db = await bgOpenDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction('scraped_stores', 'readonly').objectStore('scraped_stores').get(storeUrl);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror   = () => reject(req.error);
+    });
+}
+
+async function bgSaveScrapedStore(storeUrl, data) {
+    const existing = (await bgGetScrapedStore(storeUrl)) || {};
+    const db = await bgOpenDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('scraped_stores', 'readwrite');
+        tx.objectStore('scraped_stores').put({
+            ...existing, storeUrl,
+            collections:    data.collections    ?? existing.collections    ?? [],
+            totalProducts:  data.totalProducts  ?? existing.totalProducts  ?? 0,
+            fileSizeBytes:  data.fileSizeBytes  ?? existing.fileSizeBytes  ?? 0,
+            faviconDataUrl: existing.faviconDataUrl ?? '',
+            scrapedAt: Date.now(),
+        });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror    = () => reject(tx.error);
+    });
+}
+
+// ── Badge helpers ─────────────────────────────────────────────────────────────
+function setBadge(count, color = '#8b5cf6') {
+    const text = count <= 0 ? '' : count >= 10000 ? `${Math.floor(count / 1000)}k` : String(count);
+    chrome.action.setBadgeText({ text });
+    if (text) chrome.action.setBadgeBackgroundColor({ color });
+}
+
+// ── Scrape state helpers ──────────────────────────────────────────────────────
+async function setScrapingState(patch) {
+    const prev = (await chrome.storage.local.get('bgScrapeState')).bgScrapeState || {};
+    const next = { ...prev, ...patch };
+    await chrome.storage.local.set({ bgScrapeState: next });
+    return next;
+}
+
+// ── Main background scraping engine ──────────────────────────────────────────
+async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
+    // Mark as running
+    await chrome.storage.local.set({
+        bgScrapeState: {
+            isRunning: true, storeUrl,
+            progress: 0, message: 'Starting...',
+            collectionsTotal: 0, productsScraped: 0,
+            isIncremental: incrementalOnly,
+            error: null, completedAt: null,
+        }
+    });
+    setBadge(0, '#8b5cf6');
+
+    try {
+        // Fetch collections
+        await setScrapingState({ progress: 10, message: 'Fetching collections...' });
+        const colResp = await fetch(`${storeUrl}/collections.json`, { headers: { 'Accept': 'application/json' } });
+        if (!colResp.ok) throw new Error(`Collections fetch failed: HTTP ${colResp.status}`);
+
+        const colData   = await colResp.json();
+        const collections = colData.collections || [];
+        if (!collections.length) throw new Error('No collections found in this store');
+
+        await setScrapingState({ collectionsTotal: collections.length, progress: 15, message: `Found ${collections.length} collections`, collections });
+
+        // For incremental: get existing product IDs
+        const existingIds = incrementalOnly ? await bgGetExistingProductIds(storeUrl) : new Set();
+
+        // If full scrape: clear existing products first
+        if (!incrementalOnly) await bgClearProducts(storeUrl);
+
+        let totalNewProducts = 0;
+        const BATCH_SIZE = 50; // write to IndexedDB in batches
+        let batch = [];
+
+        async function flushBatch() {
+            if (!batch.length) return;
+            await bgSaveProducts(storeUrl, batch);
+            batch = [];
+        }
+
+        for (let i = 0; i < collections.length; i++) {
+            const col = collections[i];
+            let page = 1;
+            let hasMore = true;
+
+            while (hasMore) {
+                const progress = 15 + Math.floor(((i + (page - 1) * 0.1) / collections.length) * 80);
+                await setScrapingState({
+                    progress: Math.min(progress, 94),
+                    message: `${col.title} — page ${page}...`,
+                    productsScraped: totalNewProducts,
+                });
+                setBadge(totalNewProducts);
+
+                const url = `${storeUrl}/collections/${col.handle}/products.json?limit=250&page=${page}`;
+                try {
+                    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { hasMore = false; break; }
+                    const data = await resp.json();
+                    if (!data.products?.length) { hasMore = false; break; }
+
+                    for (const p of data.products) {
+                        if (incrementalOnly && existingIds.has(String(p.id))) continue;
+                        batch.push({ ...p, collection_title: col.title, collection_handle: col.handle });
+                        totalNewProducts++;
+                    }
+
+                    if (batch.length >= BATCH_SIZE) await flushBatch();
+
+                    hasMore = data.products.length === 250;
+                    page++;
+                } catch { hasMore = false; }
+            }
+        }
+
+        await flushBatch(); // flush remaining
+
+        // Get total products count (existing + new)
+        const db = await bgOpenDB();
+        const totalCount = await new Promise((res, rej) => {
+            const req = db.transaction('products', 'readonly').objectStore('products').index('storeUrl').count(storeUrl);
+            req.onsuccess = () => res(req.result);
+            req.onerror   = () => rej(req.error);
+        });
+
+        // Estimate file size
+        const fileSizeBytes = totalCount * 750; // ~750 bytes per product avg
+
+        await bgSaveScrapedStore(storeUrl, { collections, totalProducts: totalCount, fileSizeBytes });
+
+        await setScrapingState({
+            isRunning: false, progress: 100,
+            message: incrementalOnly
+                ? `Done! ${totalNewProducts} new products added.`
+                : `Complete! ${totalCount} products scraped.`,
+            productsScraped: totalNewProducts,
+            totalProducts: totalCount,
+            completedAt: Date.now(),
+        });
+
+        // Badge: show checkmark briefly then clear
+        chrome.action.setBadgeText({ text: '✓' });
+        chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+        setTimeout(() => chrome.action.setBadgeText({ text: '' }), 3000);
+
+    } catch (err) {
+        await setScrapingState({ isRunning: false, error: err.message, progress: 0 });
+        chrome.action.setBadgeText({ text: '!' });
+        chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+        setTimeout(() => chrome.action.setBadgeText({ text: '' }), 4000);
+    }
+}
+
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
@@ -10,6 +225,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         fetchFaviconAsBase64(request.storeUrl)
             .then(dataUrl => sendResponse({ success: true, dataUrl }))
             .catch(() => sendResponse({ success: false }));
+        return true;
+    }
+
+    if (request.action === "startScraping") {
+        startBackgroundScraping(request.storeUrl, request.incrementalOnly || false);
+        sendResponse({ started: true });
         return true;
     }
 

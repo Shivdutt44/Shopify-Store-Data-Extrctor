@@ -65,22 +65,48 @@
             </div>
             <div class="h-modal-body">
                 <p class="h-modal-store" id="shareStoreName"></p>
+
+                <!-- CSV File Share -->
+                <div class="h-share-section-label">
+                    <i class="fas fa-file-csv"></i> Share CSV File
+                </div>
+                <div class="h-share-csv-row">
+                    <button class="h-share-csv-btn" id="shareNativeBtn">
+                        <i class="fas fa-share-nodes"></i>
+                        <span>Share via Apps</span>
+                        <small>WhatsApp, Drive, Telegram…</small>
+                    </button>
+                    <button class="h-share-csv-btn h-share-csv-download" id="shareDownloadBtn">
+                        <i class="fas fa-file-arrow-down"></i>
+                        <span>Download CSV</span>
+                        <small>Save to device</small>
+                    </button>
+                </div>
+
+                <div class="h-share-preparing" id="sharePrep" style="display:none;">
+                    <i class="fas fa-spinner fa-spin"></i> Preparing CSV…
+                </div>
+
+                <!-- Divider -->
+                <div class="h-share-divider"><span>or share store link</span></div>
+
+                <!-- URL Share -->
                 <div class="h-share-options">
                     <button class="h-share-btn" data-action="copy">
                         <i class="fas fa-copy"></i>
-                        <span>Copy Store URL</span>
+                        <span>Copy URL</span>
                     </button>
                     <button class="h-share-btn" data-action="whatsapp">
                         <i class="fab fa-whatsapp"></i>
-                        <span>Share on WhatsApp</span>
+                        <span>WhatsApp</span>
                     </button>
                     <button class="h-share-btn" data-action="email">
                         <i class="fas fa-envelope"></i>
-                        <span>Share via Email</span>
+                        <span>Email</span>
                     </button>
                     <button class="h-share-btn" data-action="twitter">
                         <i class="fab fa-twitter"></i>
-                        <span>Share on Twitter</span>
+                        <span>Twitter</span>
                     </button>
                 </div>
                 <div class="h-share-copied" id="shareCopied" style="display:none;">

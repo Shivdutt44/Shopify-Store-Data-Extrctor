@@ -509,7 +509,7 @@ body {
 .h-share-btn[data-action="twitter"] i { color: #1d9bf0; }
 
 .h-share-copied {
-    margin-top: 14px;
+    margin-top: 10px;
     background: rgba(16,185,129,0.1);
     border: 1px solid rgba(16,185,129,0.3);
     border-radius: 8px;
@@ -518,6 +518,109 @@ body {
     color: #10b981;
     display: flex;
     align-items: center;
+    gap: 8px;
+}
+
+/* ── CSV Share Section ───────────────────────────────────────────────────── */
+.h-share-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.h-share-section-label i { color: #34d399; }
+
+.h-share-csv-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.h-share-csv-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+    border: 1px solid rgba(16,185,129,0.3);
+    background: rgba(16,185,129,0.08);
+    color: #34d399;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.2s;
+}
+
+.h-share-csv-btn i { font-size: 22px; }
+.h-share-csv-btn span { font-size: 13px; font-weight: 700; }
+.h-share-csv-btn small { font-size: 10px; color: var(--text-secondary); font-weight: 400; }
+
+.h-share-csv-btn:hover {
+    background: rgba(16,185,129,0.18);
+    border-color: rgba(16,185,129,0.55);
+    box-shadow: 0 4px 16px rgba(16,185,129,0.18);
+    transform: translateY(-2px);
+}
+
+.h-share-csv-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.h-share-csv-download {
+    border-color: rgba(99,102,241,0.3);
+    background: rgba(99,102,241,0.08);
+    color: #818cf8;
+}
+
+.h-share-csv-download:hover {
+    background: rgba(99,102,241,0.18);
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 4px 16px rgba(99,102,241,0.18);
+}
+
+.h-share-preparing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #34d399;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: rgba(16,185,129,0.06);
+    border-radius: 8px;
+    border: 1px solid rgba(16,185,129,0.15);
+}
+
+.h-share-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0 12px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.h-share-divider::before,
+.h-share-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.h-share-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
 }
 

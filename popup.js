@@ -120,28 +120,86 @@ function isShopifyStore() {
     return shopifyIndicators.some(indicator => indicator);
 }
 
-// ── Smart Cache Logic ────────────────────────────────────────────────────────
+// ── Smart Cache + Background Scraping Logic ──────────────────────────────────
+
+let _progressListener = null; // single active storage listener
+
+function attachProgressListener() {
+    if (_progressListener) chrome.storage.onChanged.removeListener(_progressListener);
+    _progressListener = (changes, area) => {
+        if (area !== 'local' || !changes.bgScrapeState) return;
+        const state = changes.bgScrapeState.newValue;
+        if (!state || state.storeUrl !== currentStoreUrl) return;
+        applyBgState(state);
+    };
+    chrome.storage.onChanged.addListener(_progressListener);
+}
+
+function applyBgState(state) {
+    if (state.isRunning) {
+        // Show live progress
+        hideCachedBanner();
+        updateProgress(state.progress || 0, state.message || '');
+        const pc = document.getElementById('productsCount');
+        const cc = document.getElementById('collectionsCount');
+        if (pc) pc.textContent = state.productsScraped || 0;
+        if (cc && state.collectionsTotal) cc.textContent = state.collectionsTotal;
+        const statsContainer = document.getElementById('statsContainer');
+        if (statsContainer) statsContainer.style.display = 'grid';
+    } else if (!state.error) {
+        // Done — load from IndexedDB
+        loadCompletedScrape(state);
+    } else {
+        // Error
+        isExtracting = false;
+        showError(`<div class="error-title"><i class="fas fa-times-circle"></i> Scraping Failed</div><div class="error-message">${state.error}</div>`);
+        updateProgress(100, 'Extraction failed', true);
+        resetExtractButton();
+    }
+}
+
+async function loadCompletedScrape(state) {
+    isExtracting = false;
+    const cached = await ShopifyDB.getScrapedStore(currentStoreUrl);
+    if (!cached) return;
+    const products = await ShopifyDB.getProductsByStore(currentStoreUrl);
+    allProductsData = products;
+    currentStoreCollections = cached.collections || [];
+    chrome.storage.local.set({ storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl } });
+    updateProgress(100, state.isIncremental
+        ? `Done! ${state.productsScraped} new products added.`
+        : `Complete! ${products.length} products scraped.`);
+    // Enable buttons and show collection dropdown
+    populateCachedCollectionDropdown(currentStoreCollections);
+    const downloadBtn = document.getElementById('downloadBtn');
+    const viewResultsBtn = document.getElementById('viewResultsBtn');
+    if (downloadBtn) downloadBtn.disabled = false;
+    if (viewResultsBtn) viewResultsBtn.disabled = false;
+    const resultsSection = document.querySelector('.results-section');
+    if (resultsSection) resultsSection.style.display = 'block';
+}
 
 async function checkCacheAndStart() {
     if (!currentStoreUrl) { startExtraction(); return; }
 
+    // First check if background is already scraping this store
+    const stored = await chrome.storage.local.get('bgScrapeState');
+    const bgState = stored.bgScrapeState;
+    if (bgState && bgState.isRunning && bgState.storeUrl === currentStoreUrl) {
+        isExtracting = true;
+        applyBgState(bgState);
+        attachProgressListener();
+        return;
+    }
+
+    // Check IndexedDB cache
     const cached = await ShopifyDB.getScrapedStore(currentStoreUrl);
     if (!cached) { startExtraction(); return; }
 
-    // Load cached products into memory so download works immediately
     const products = await ShopifyDB.getProductsByStore(currentStoreUrl);
     allProductsData = products;
     currentStoreCollections = cached.collections || [];
-
-    // Restore results page data
-    chrome.storage.local.set({
-        storeData: {
-            collections: currentStoreCollections,
-            products: allProductsData,
-            storeUrl: currentStoreUrl
-        }
-    });
-
+    chrome.storage.local.set({ storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl } });
     showCachedBanner(cached);
 }
 
@@ -224,394 +282,76 @@ async function checkForNewProducts() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
     resultDiv.style.display = 'none';
 
-    try {
-        // Get existing product IDs from DB
-        const existing = await ShopifyDB.getProductsByStore(currentStoreUrl);
-        const existingIds = new Set(existing.map(p => String(p.id)));
+    // Hide cached banner, show progress
+    hideCachedBanner();
+    updateProgress(0, 'Checking for new products...');
+    isExtracting = true;
 
-        // Fetch current products from store (all collections)
-        const newProducts = [];
+    // Delegate to background (incremental mode)
+    chrome.runtime.sendMessage({ action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: true });
 
-        for (const collection of currentStoreCollections) {
-            let page = 1;
-            let hasMore = true;
+    attachProgressListener();
 
-            while (hasMore) {
-                const url = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
-                try {
-                    const resp = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } });
-                    if (!resp.ok) { hasMore = false; break; }
+    // Listen for completion to show result message
+    const onDone = (changes, area) => {
+        if (area !== 'local' || !changes.bgScrapeState) return;
+        const state = changes.bgScrapeState.newValue;
+        if (!state || state.storeUrl !== currentStoreUrl || state.isRunning) return;
 
-                    const data = await resp.json();
-                    if (!data.products || data.products.length === 0) { hasMore = false; break; }
-
-                    data.products.forEach(product => {
-                        if (!existingIds.has(String(product.id))) {
-                            newProducts.push({
-                                ...product,
-                                collection_title: collection.title,
-                                collection_handle: collection.handle,
-                            });
-                        }
-                    });
-
-                    hasMore = data.products.length === 250;
-                    page++;
-                } catch (e) { hasMore = false; }
-            }
-        }
-
-        if (newProducts.length === 0) {
-            resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#10b981"></i> No new products found. Your data is up to date!`;
-        } else {
-            // Save new products to DB
-            await ShopifyDB.saveProducts(currentStoreUrl, newProducts);
-
-            // Merge into memory
-            allProductsData = [...allProductsData, ...newProducts];
-
-            // Update store metadata
-            await ShopifyDB.saveScrapedStore(currentStoreUrl, {
-                collections: currentStoreCollections,
-                totalProducts: allProductsData.length,
-            });
-
-            // Update results page storage
-            chrome.storage.local.set({
-                storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl }
-            });
-
-            // Refresh UI
-            populateCachedCollectionDropdown(currentStoreCollections);
-            document.getElementById('cachedMeta').innerHTML =
-                `<strong>${allProductsData.length} products</strong> from <strong>${currentStoreCollections.length} collections</strong> &nbsp;|&nbsp; Updated just now`;
-
-            resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `<i class="fas fa-plus-circle" style="color:#6366f1"></i> <strong>${newProducts.length} new products</strong> added to your data! Download CSV to get updated sheet.`;
-        }
-    } catch (err) {
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#ef4444"></i> Error checking for new products: ${err.message}`;
-    } finally {
+        chrome.storage.onChanged.removeListener(onDone);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-sync-alt"></i> Check New Products';
-    }
+
+        if (state.error) {
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#ef4444"></i> ${state.error}`;
+            return;
+        }
+
+        const added = state.productsScraped || 0;
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = added === 0
+            ? `<i class="fas fa-check-circle" style="color:#10b981"></i> No new products found. Your data is up to date!`
+            : `<i class="fas fa-plus-circle" style="color:#6366f1"></i> <strong>${added} new products</strong> added! Download CSV to get updated sheet.`;
+
+        // Refresh cached banner with new data
+        loadCompletedScrape(state).then(() => {
+            ShopifyDB.getScrapedStore(currentStoreUrl).then(c => { if (c) showCachedBanner(c); });
+        });
+    };
+    chrome.storage.onChanged.addListener(onDone);
 }
 
 // ── End Smart Cache Logic ────────────────────────────────────────────────────
 
 function startExtraction() {
     if (isExtracting) return;
-
     isExtracting = true;
-    const extractBtn = document.getElementById('extractBtn');
-    if (extractBtn) {
-        extractBtn.disabled = true;
-        extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Extracting...</span>';
-    }
 
-    // Reset state
+    // Reset UI
     allProductsData = [];
     currentStoreCollections = [];
-    const downloadBtn = document.getElementById('downloadBtn');
+    const downloadBtn   = document.getElementById('downloadBtn');
     const viewResultsBtn = document.getElementById('viewResultsBtn');
-    if (downloadBtn) {
-        downloadBtn.disabled = true;
-    }
-    if (viewResultsBtn) {
-        viewResultsBtn.disabled = true;
-    }
+    const extractBtn    = document.getElementById('extractBtn');
     const statsContainer = document.getElementById('statsContainer');
-    if (statsContainer) {
-        statsContainer.style.display = 'none';
-    }
     const collectionSelector = document.getElementById('collectionSelector');
-    if (collectionSelector) {
-        collectionSelector.style.display = 'none';
-    }
-    const collectionSelect = document.getElementById('collectionSelect');
-    if (collectionSelect) {
-        collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
-    }
+    const collectionSelect   = document.getElementById('collectionSelect');
+    if (downloadBtn)   downloadBtn.disabled = true;
+    if (viewResultsBtn) viewResultsBtn.disabled = true;
+    if (extractBtn)   { extractBtn.disabled = true; extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Extracting...</span>'; }
+    if (statsContainer) statsContainer.style.display = 'none';
+    if (collectionSelector) collectionSelector.style.display = 'none';
+    if (collectionSelect) collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
 
-    // Start extraction process
-    fetchStoreData();
+    updateProgress(0, 'Starting background extraction...');
+
+    // Delegate to background service worker — survives popup close
+    chrome.runtime.sendMessage({ action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: false });
+    attachProgressListener();
 }
 
-async function fetchStoreData() {
-    const progressRing = document.querySelector('.progress-ring-circle');
-    const percentageText = document.querySelector('.percentage');
-    const progressMessage = document.getElementById('progressMessage');
-    const collectionsCount = document.getElementById('collectionsCount');
-    const productsCount = document.getElementById('productsCount');
-    const collectionSelect = document.getElementById('collectionSelect');
-    const collectionInfo = document.getElementById('collectionInfo');
-    const extractBtn = document.getElementById('extractBtn');
-    const statsContainer = document.getElementById('statsContainer');
-
-    if (!currentStoreUrl) {
-        showError('No store URL detected. Please navigate to a Shopify store first.');
-        resetExtractButton();
-        return;
-    }
-
-    updateProgress(0, 'Initializing automatic extraction...');
-
-    try {
-        // First, try to fetch collections
-        updateProgress(10, 'Connecting to store for automatic extraction...');
-        const collectionsUrl = `${currentStoreUrl}/collections.json`;
-        const collectionsResponse = await fetchWithTimeout(collectionsUrl, {
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!collectionsResponse.ok) {
-            throw new Error(`HTTP error! status: ${collectionsResponse.status}`);
-        }
-
-        const collectionsData = await collectionsResponse.json();
-        updateProgress(30, 'Analyzing collections for automatic extraction...');
-
-        if (collectionsData && collectionsData.collections) {
-            const collections = collectionsData.collections;
-            currentStoreCollections = collections;
-
-            if (collections.length === 0) {
-                showError('No collections found in this store');
-                updateProgress(100, 'No collections found', true);
-                resetExtractButton();
-                return;
-            }
-
-            // Update stats
-            if (collectionsCount) {
-                collectionsCount.textContent = collections.length;
-            }
-            if (statsContainer) {
-                statsContainer.style.display = 'grid';
-            }
-
-            // Populate collection dropdown with product counts
-            let totalProducts = 0;
-            const productCountsByCollection = {};
-
-            // First get all collection handles to count products (with pagination)
-            for (let i = 0; i < collections.length; i++) {
-                const collection = collections[i];
-                let page = 1;
-                let hasMoreProducts = true;
-                let collectionProductCount = 0;
-
-                while (hasMoreProducts) {
-                    try {
-                        const progress = 30 + Math.floor((i / collections.length) * 20);
-                        updateProgress(progress, `Counting products in ${collection.title} (page ${page})...`);
-
-                        const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
-                        const productsResponse = await fetchWithTimeout(productsUrl, {
-                            headers: {
-                                'Accept': 'application/json'
-                            }
-                        });
-
-                        if (productsResponse.ok) {
-                            const productsData = await productsResponse.json();
-                            if (productsData && productsData.products) {
-                                collectionProductCount += productsData.products.length;
-
-                                // If we got less than 250 products, we've reached the end
-                                if (productsData.products.length < 250) {
-                                    hasMoreProducts = false;
-                                } else {
-                                    page++;
-                                }
-                            } else {
-                                hasMoreProducts = false;
-                            }
-                        } else {
-                            hasMoreProducts = false;
-                        }
-                    } catch (error) {
-                        console.error(`Error counting products for collection ${collection.title}:`, error);
-                        hasMoreProducts = false;
-                    }
-                }
-
-                productCountsByCollection[collection.handle] = collectionProductCount;
-                totalProducts += collectionProductCount;
-            }
-
-            // Update currentStoreCollections to include all collections
-            currentStoreCollections = collections;
-
-            // Now populate the dropdown with counts (show all collections)
-            if (collectionSelect) {
-                collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
-                collections.forEach(collection => {
-                    const productCount = productCountsByCollection[collection.handle] || 0;
-                    const option = document.createElement('option');
-                    option.value = collection.handle;
-                    option.textContent = `${collection.title} (${productCount} products)`;
-                    option.dataset.count = productCount;
-                    collectionSelect.appendChild(option);
-                });
-            }
-
-            // Update the "All Collections" option with total count
-            const allOption = collectionSelect ? collectionSelect.querySelector('option[value="all"]') : null;
-            if (allOption) {
-                allOption.textContent = `All Collections (${totalProducts} products)`;
-                allOption.dataset.count = totalProducts;
-            }
-
-            // Update collection info
-            if (collectionInfo) {
-                collectionInfo.textContent = `Found ${collections.length} collections with ${totalProducts} total products`;
-            }
-
-            // Now fetch all products for each collection (with pagination - gets ALL products)
-            for (let i = 0; i < collections.length; i++) {
-                const collection = collections[i];
-                let page = 1;
-                let hasMoreProducts = true;
-
-                while (hasMoreProducts) {
-                    try {
-                        const progress = 50 + Math.floor((i / collections.length) * 40);
-                        updateProgress(progress, `Fetching ${collection.title} products (page ${page})...`);
-
-                        const productsUrl = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
-                        const productsResponse = await fetchWithTimeout(productsUrl, {
-                            headers: {
-                                'Accept': 'application/json'
-                            }
-                        });
-
-                        if (productsResponse.ok) {
-                            const productsData = await productsResponse.json();
-
-                            if (productsData && productsData.products) {
-                                const products = productsData.products;
-
-                                // Store products for CSV export with all possible fields
-                                products.forEach(product => {
-                                    // Just push the enriched raw product data to keep all variants, images, options intact
-                                    const productData = {
-                                        ...product,
-                                        // Collection info
-                                        collection_title: collection.title || '',
-                                        collection_handle: collection.handle || ''
-                                    };
-                                    allProductsData.push(productData);
-                                });
-
-                                // Update products count
-                                if (productsCount) {
-                                    productsCount.textContent = allProductsData.length;
-                                }
-
-                                // If we got less than 250 products, we've reached the end
-                                if (productsData.products.length < 250) {
-                                    hasMoreProducts = false;
-                                } else {
-                                    page++;
-                                }
-                            } else {
-                                hasMoreProducts = false;
-                            }
-                        } else {
-                            hasMoreProducts = false;
-                        }
-                    } catch (error) {
-                        console.error(`Error fetching products for collection ${collection.title}:`, error);
-                        hasMoreProducts = false;
-                    }
-                }
-            }
-
-            // Show collection selector
-            const collectionSelector = document.getElementById('collectionSelector');
-            if (collectionSelector) {
-                collectionSelector.style.display = 'block';
-            }
-
-            // Complete progress
-            updateProgress(100, 'Automatic extraction complete!');
-
-            // Enable buttons if we have data
-            if (allProductsData.length > 0) {
-                const downloadBtn = document.getElementById('downloadBtn');
-                const viewResultsBtn = document.getElementById('viewResultsBtn');
-                if (downloadBtn) {
-                    downloadBtn.disabled = false;
-                }
-                if (viewResultsBtn) {
-                    viewResultsBtn.disabled = false;
-                }
-            }
-
-            // Store data for results page
-            chrome.storage.local.set({
-                storeData: {
-                    collections: currentStoreCollections,
-                    products: allProductsData,
-                    storeUrl: currentStoreUrl
-                }
-            });
-
-            // Save to IndexedDB for smart caching
-            const estimatedBytes = new Blob([JSON.stringify(allProductsData)]).size;
-            await ShopifyDB.saveScrapedStore(currentStoreUrl, {
-                collections: currentStoreCollections,
-                totalProducts: allProductsData.length,
-                fileSizeBytes: estimatedBytes,
-            });
-            await ShopifyDB.saveProducts(currentStoreUrl, allProductsData);
-
-        } else {
-            showError('No collections found or data format unexpected. This might not be a Shopify store.');
-            updateProgress(100, 'Extraction failed', true);
-            resetExtractButton();
-        }
-    } catch (error) {
-        console.error('Error fetching store data:', error);
-        updateProgress(100, 'Extraction failed', true);
-
-        let errorMessage = `
-            <div class="error-title">
-                <i class="fas fa-times-circle"></i>
-                Extraction Failed
-            </div>
-            <div class="error-message">
-                We couldn't extract data from this store. Possible reasons:
-                <ul class="error-list">
-                    <li>The store doesn't allow public access to collections/products</li>
-                    <li>The store has CORS restrictions</li>
-                    <li>The URL is not a valid Shopify store</li>
-                    <li>You've reached rate limits (try again later)</li>
-                </ul>
-            </div>
-        `;
-
-        // Add specific error information if available
-        if (error.message) {
-            errorMessage += `
-                <div class="error-message" style="margin-top: 10px; font-size: 12px;">
-                    <strong>Technical Details:</strong> ${error.message}
-                </div>
-            `;
-        }
-
-        showError(errorMessage);
-
-        resetExtractButton();
-    } finally {
-        isExtracting = false;
-    }
-}
+// fetchStoreData removed — scraping now handled by background.js via startBackgroundScraping()
 
 function fetchWithTimeout(url, options = {}, timeout = 10000) {
     return new Promise((resolve, reject) => {

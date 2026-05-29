@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.h-share-btn').forEach(btn => {
         btn.addEventListener('click', () => handleShare(btn.dataset.action));
     });
+    document.getElementById('shareNativeBtn').addEventListener('click', () => shareCsvFile('native'));
+    document.getElementById('shareDownloadBtn').addEventListener('click', () => shareCsvFile('download'));
 });
 
 async function renderHistory() {
@@ -239,6 +241,145 @@ async function clearAll() {
     renderHistory();
 }
 
+// ── CSV Generator (shared) ────────────────────────────────────────────────────
+
+function getHighResImage(url) {
+    if (!url) return '';
+    return url.replace(/_(?:[0-9]+x[0-9]+|pico|icon|thumb|small|compact|medium|large|grande|1024x1024|2048x2048)(?=\.[a-zA-Z0-9]+(?:\?.*)?$)/i, '');
+}
+
+function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/"/g, '""');
+}
+
+async function buildCsvBlob(storeUrl) {
+    const products = await ShopifyDB.getProductsByStore(storeUrl);
+    if (!products || products.length === 0) return null;
+
+    const headers = [
+        'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags',
+        'Published','Option1 Name','Option1 Value','Option2 Name','Option2 Value',
+        'Option3 Name','Option3 Value','Variant SKU','Variant Grams',
+        'Variant Inventory Tracker','Variant Inventory Qty','Variant Inventory Policy',
+        'Variant Fulfillment Service','Variant Price','Variant Compare At Price',
+        'Variant Requires Shipping','Variant Taxable','Variant Barcode',
+        'Image Src','Image Position','Image Alt Text','Gift Card',
+        'SEO Title','SEO Description',
+        'Google Shopping / Google Product Category','Google Shopping / Gender',
+        'Google Shopping / Age Group','Google Shopping / MPN',
+        'Google Shopping / Condition','Google Shopping / Custom Product',
+        'Google Shopping / Custom Label 0','Google Shopping / Custom Label 1',
+        'Google Shopping / Custom Label 2','Google Shopping / Custom Label 3',
+        'Google Shopping / Custom Label 4','Variant Image','Variant Weight Unit',
+        'Variant Tax Code','Cost per item','Price / International',
+        'Compare At Price / International','Status','Collection'
+    ];
+
+    const rows = [headers.join(',')];
+
+    products.forEach(product => {
+        const variants = product.variants?.length ? product.variants : [{}];
+        const images   = product.images || [];
+        const maxRows  = Math.max(variants.length, images.length || 1);
+
+        for (let i = 0; i < maxRows; i++) {
+            const variant      = i < variants.length ? variants[i] : {};
+            const image        = i < images.length  ? images[i]   : null;
+            const variantImage = variant.featured_image?.src || '';
+
+            rows.push([
+                `"${esc(product.handle)}"`,
+                `"${esc(product.title)}"`,
+                `"${esc(product.body_html)}"`,
+                `"${esc(product.vendor)}"`,
+                `"${esc(product.product_type || '')}"`,
+                `"${esc(product.product_type || '')}"`,
+                `"${esc(product.tags)}"`,
+                product.published_at ? 'true' : 'false',
+                `"${esc(product.options?.[0]?.name || '')}"`,
+                `"${esc(variant.option1)}"`,
+                `"${esc(product.options?.[1]?.name || '')}"`,
+                `"${esc(variant.option2)}"`,
+                `"${esc(product.options?.[2]?.name || '')}"`,
+                `"${esc(variant.option3)}"`,
+                `"${esc(variant.sku)}"`,
+                variant.grams !== undefined ? variant.grams : (i < variants.length ? '0' : ''),
+                `"${esc(variant.inventory_management || '')}"`,
+                variant.inventory_quantity !== undefined ? variant.inventory_quantity : (i < variants.length ? '0' : ''),
+                `"${esc(variant.inventory_policy || (i < variants.length ? 'deny' : ''))}"`,
+                `"${esc(variant.fulfillment_service || (i < variants.length ? 'manual' : ''))}"`,
+                variant.price ?? (i < variants.length ? '0.00' : ''),
+                variant.compare_at_price || '',
+                variant.requires_shipping !== undefined ? (variant.requires_shipping ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                variant.taxable !== undefined ? (variant.taxable ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
+                `"${esc(variant.barcode)}"`,
+                `"${esc(getHighResImage(image?.src))}"`,
+                image ? String(i + 1) : '',
+                `"${esc(image?.alt || (image ? product.title : ''))}"`,
+                product.gift_card ? 'true' : 'false',
+                `"${esc(product.metafields_global_title_tag || '')}"`,
+                `"${esc(product.metafields_global_description_tag || '')}"`,
+                `""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,
+                `"${esc(getHighResImage(variantImage))}"`,
+                `"${esc(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
+                `""`,`""`,`""`,`""`,
+                `"${esc(product.status || 'active')}"`,
+                `"${esc(product.collection_title || '')}"`
+            ].join(','));
+        }
+    });
+
+    return new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+}
+
+// ── CSV Share (native OS share dialog / download) ─────────────────────────────
+
+async function shareCsvFile(mode) {
+    const prep    = document.getElementById('sharePrep');
+    const nativeBtn   = document.getElementById('shareNativeBtn');
+    const downloadBtn = document.getElementById('shareDownloadBtn');
+
+    prep.style.display = 'flex';
+    nativeBtn.disabled = true;
+    downloadBtn.disabled = true;
+
+    try {
+        const blob = await buildCsvBlob(currentShareUrl);
+        if (!blob) { alert('No product data found for this store.'); return; }
+
+        let domain = currentShareUrl;
+        try { domain = new URL(currentShareUrl).hostname.replace(/\./g, '_'); } catch {}
+        const fileName = `${domain}_products_${new Date().toISOString().slice(0, 10)}.csv`;
+
+        if (mode === 'native' && navigator.canShare) {
+            const file = new File([blob], fileName, { type: 'text/csv' });
+            if (navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: `${domain} — Products CSV`,
+                    text: `Shopify product data for ${domain}`,
+                });
+                return;
+            }
+        }
+
+        // Fallback: trigger download
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+
+    } catch (err) {
+        if (err.name !== 'AbortError') console.error('Share error:', err);
+    } finally {
+        prep.style.display = 'none';
+        nativeBtn.disabled = false;
+        downloadBtn.disabled = false;
+    }
+}
+
 // ── Download ─────────────────────────────────────────────────────────────────
 
 async function downloadStore(store) {
@@ -248,105 +389,15 @@ async function downloadStore(store) {
     btn.disabled = true;
 
     try {
-        const products = await ShopifyDB.getProductsByStore(store.storeUrl);
-        if (!products || products.length === 0) {
-            alert('No product data found for this store.');
-            return;
-        }
+        const blob = await buildCsvBlob(store.storeUrl);
+        if (!blob) { alert('No product data found for this store.'); return; }
 
         let domain = store.storeUrl;
         try { domain = new URL(store.storeUrl).hostname.replace(/\./g, '_'); } catch {}
+        const fileName = `${domain}_products_${new Date().toISOString().slice(0, 10)}.csv`;
 
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const fileName = `${domain}_products_${dateStr}.csv`;
-
-        const headers = [
-            'Handle','Title','Body (HTML)','Vendor','Product Category','Type','Tags',
-            'Published','Option1 Name','Option1 Value','Option2 Name','Option2 Value',
-            'Option3 Name','Option3 Value','Variant SKU','Variant Grams',
-            'Variant Inventory Tracker','Variant Inventory Qty','Variant Inventory Policy',
-            'Variant Fulfillment Service','Variant Price','Variant Compare At Price',
-            'Variant Requires Shipping','Variant Taxable','Variant Barcode',
-            'Image Src','Image Position','Image Alt Text','Gift Card',
-            'SEO Title','SEO Description',
-            'Google Shopping / Google Product Category','Google Shopping / Gender',
-            'Google Shopping / Age Group','Google Shopping / MPN',
-            'Google Shopping / Condition','Google Shopping / Custom Product',
-            'Google Shopping / Custom Label 0','Google Shopping / Custom Label 1',
-            'Google Shopping / Custom Label 2','Google Shopping / Custom Label 3',
-            'Google Shopping / Custom Label 4','Variant Image','Variant Weight Unit',
-            'Variant Tax Code','Cost per item','Price / International',
-            'Compare At Price / International','Status','Collection'
-        ];
-
-        function getHighResImage(url) {
-            if (!url) return '';
-            return url.replace(/_(?:[0-9]+x[0-9]+|pico|icon|thumb|small|compact|medium|large|grande|1024x1024|2048x2048)(?=\.[a-zA-Z0-9]+(?:\?.*)?$)/i, '');
-        }
-
-        function esc(v) {
-            if (v === null || v === undefined) return '';
-            return String(v).replace(/"/g, '""');
-        }
-
-        const rows = [headers.join(',')];
-
-        products.forEach(product => {
-            const variants = product.variants && product.variants.length > 0 ? product.variants : [{}];
-            const images   = product.images || [];
-            const maxRows  = Math.max(variants.length, images.length > 0 ? images.length : 1);
-
-            for (let i = 0; i < maxRows; i++) {
-                const variant = i < variants.length ? variants[i] : {};
-                const image   = i < images.length ? images[i] : null;
-                const variantImage = variant.featured_image ? variant.featured_image.src : '';
-
-                rows.push([
-                    `"${esc(product.handle)}"`,
-                    `"${esc(product.title)}"`,
-                    `"${esc(product.body_html)}"`,
-                    `"${esc(product.vendor)}"`,
-                    `"${esc(product.product_type || '')}"`,
-                    `"${esc(product.product_type || '')}"`,
-                    `"${esc(product.tags)}"`,
-                    product.published_at ? 'true' : 'false',
-                    `"${esc(product.options?.[0]?.name || '')}"`,
-                    `"${esc(variant.option1)}"`,
-                    `"${esc(product.options?.[1]?.name || '')}"`,
-                    `"${esc(variant.option2)}"`,
-                    `"${esc(product.options?.[2]?.name || '')}"`,
-                    `"${esc(variant.option3)}"`,
-                    `"${esc(variant.sku)}"`,
-                    variant.grams !== undefined ? variant.grams : (i < variants.length ? '0' : ''),
-                    `"${esc(variant.inventory_management || '')}"`,
-                    variant.inventory_quantity !== undefined ? variant.inventory_quantity : (i < variants.length ? '0' : ''),
-                    `"${esc(variant.inventory_policy || (i < variants.length ? 'deny' : ''))}"`,
-                    `"${esc(variant.fulfillment_service || (i < variants.length ? 'manual' : ''))}"`,
-                    variant.price ?? (i < variants.length ? '0.00' : ''),
-                    variant.compare_at_price || '',
-                    variant.requires_shipping !== undefined ? (variant.requires_shipping ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
-                    variant.taxable !== undefined ? (variant.taxable ? 'true' : 'false') : (i < variants.length ? 'false' : ''),
-                    `"${esc(variant.barcode)}"`,
-                    `"${esc(getHighResImage(image?.src))}"`,
-                    image ? String(i + 1) : '',
-                    `"${esc(image?.alt || (image ? product.title : ''))}"`,
-                    product.gift_card ? 'true' : 'false',
-                    `"${esc(product.metafields_global_title_tag || '')}"`,
-                    `"${esc(product.metafields_global_description_tag || '')}"`,
-                    `""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,`""`,
-                    `"${esc(getHighResImage(variantImage))}"`,
-                    `"${esc(variant.weight_unit || (i < variants.length ? 'kg' : ''))}"`,
-                    `""`,`""`,`""`,`""`,
-                    `"${esc(product.status || 'active')}"`,
-                    `"${esc(product.collection_title || '')}"`
-                ].join(','));
-            }
-        });
-
-        const csv = '﻿' + rows.join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
         a.href = url; a.download = fileName;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 100);
