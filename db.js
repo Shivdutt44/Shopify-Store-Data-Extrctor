@@ -97,16 +97,32 @@ async function clearProductsByStore(storeUrl) {
 // ── Scraped Stores (full store data) ────────────────────────────────────────
 
 async function saveScrapedStore(storeUrl, data) {
+  // Merge with existing record so we never overwrite favicon/other cached fields
+  const existing = await getScrapedStore(storeUrl) || {};
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.SCRAPED_STORES, 'readwrite');
     tx.objectStore(STORES.SCRAPED_STORES).put({
+      ...existing,
       storeUrl,
-      collections: data.collections || [],
-      totalProducts: data.totalProducts || 0,
-      fileSizeBytes: data.fileSizeBytes || 0,
+      collections:     data.collections     ?? existing.collections     ?? [],
+      totalProducts:   data.totalProducts   ?? existing.totalProducts   ?? 0,
+      fileSizeBytes:   data.fileSizeBytes   ?? existing.fileSizeBytes   ?? 0,
+      faviconDataUrl:  data.faviconDataUrl  ?? existing.faviconDataUrl  ?? '',
       scrapedAt: Date.now(),
     });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function updateStoreFavicon(storeUrl, faviconDataUrl) {
+  const existing = await getScrapedStore(storeUrl);
+  if (!existing) return;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.SCRAPED_STORES, 'readwrite');
+    tx.objectStore(STORES.SCRAPED_STORES).put({ ...existing, faviconDataUrl });
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
   });
@@ -184,5 +200,6 @@ window.ShopifyDB = {
   getScrapedStore,
   getAllScrapedStores,
   deleteScrapedStore,
+  updateStoreFavicon,
   Settings,
 };

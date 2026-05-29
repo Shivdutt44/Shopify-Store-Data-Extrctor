@@ -5,6 +5,14 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+
+    if (request.action === "fetchFavicon") {
+        fetchFaviconAsBase64(request.storeUrl)
+            .then(dataUrl => sendResponse({ success: true, dataUrl }))
+            .catch(() => sendResponse({ success: false }));
+        return true;
+    }
+
     if (request.action === "checkShopify") {
         // Check if the current page is a Shopify store
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -142,3 +150,32 @@ chrome.action.onClicked.addListener((tab) => {
     // This will open the popup when the extension icon is clicked
     // The popup.html is set as the default in manifest.json
 });
+
+// Fetch store favicon and return as base64 data URL
+async function fetchFaviconAsBase64(storeUrl) {
+    // Try sources in priority order: SVG > PNG > ICO > Google API
+    const candidates = [
+        `${storeUrl}/favicon.svg`,
+        `${storeUrl}/favicon.png`,
+        `${storeUrl}/apple-touch-icon.png`,
+        `${storeUrl}/apple-touch-icon-precomposed.png`,
+        `${storeUrl}/favicon.ico`,
+        `https://www.google.com/s2/favicons?domain=${new URL(storeUrl).hostname}&sz=128`,
+    ];
+
+    for (const url of candidates) {
+        try {
+            const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            if (!resp.ok) continue;
+            const contentType = resp.headers.get('content-type') || '';
+            // Skip HTML responses (redirect to homepage)
+            if (contentType.includes('text/html')) continue;
+            const buffer = await resp.arrayBuffer();
+            if (buffer.byteLength < 100) continue; // skip tiny/empty files
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+            const mime = contentType.split(';')[0].trim() || 'image/x-icon';
+            return `data:${mime};base64,${base64}`;
+        } catch { continue; }
+    }
+    throw new Error('No favicon found');
+}

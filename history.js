@@ -37,10 +37,14 @@ async function renderHistory() {
     allStores.forEach((store, i) => {
         const card = buildCard(store, i);
         grid.appendChild(card);
-        // If fileSize not yet calculated, compute it async and update badge
+
+        // Async: calculate file size if missing
         if (!store.fileSizeBytes || store.fileSizeBytes === 0) {
             computeAndUpdateFileSize(store, card);
         }
+
+        // Async: load real store logo via background script
+        loadStoreFavicon(store, card);
     });
 }
 
@@ -49,6 +53,34 @@ function formatBytes(bytes) {
     if (bytes < 1024)          return `${bytes} B`;
     if (bytes < 1024 * 1024)   return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function loadStoreFavicon(store, card) {
+    // Already cached in DB — nothing to do (set above in buildCard)
+    if (store.faviconDataUrl) return;
+
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: 'fetchFavicon',
+            storeUrl: store.storeUrl,
+        });
+
+        if (!response || !response.success || !response.dataUrl) return;
+
+        // Update img in card
+        const img = card.querySelector('.h-card-logo img');
+        const fallback = card.querySelector('.h-logo-fallback');
+        if (img) {
+            img.src = response.dataUrl;
+            img.style.display = 'block';
+            if (fallback) fallback.style.display = 'none';
+        }
+
+        // Cache in DB so next open is instant
+        await ShopifyDB.updateStoreFavicon(store.storeUrl, response.dataUrl);
+    } catch (e) {
+        // Silently fail — fallback initials already shown
+    }
 }
 
 async function computeAndUpdateFileSize(store, card) {
@@ -89,9 +121,6 @@ function buildCard(store, index) {
     const totalCols  = (store.collections || []).length;
     const fileSize   = formatBytes(store.fileSizeBytes || 0);
 
-    // Google Favicon API — reliable across all Shopify stores
-    const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-
     const card = document.createElement('div');
     card.className = 'h-card';
     card.dataset.url = store.storeUrl;
@@ -101,9 +130,9 @@ function buildCard(store, index) {
         <div class="h-card-body">
             <div class="h-card-identity">
                 <div class="h-card-logo">
-                    <img src="${faviconUrl}" alt="${initials}"
-                         onerror="this.src='';this.style.display='none';this.nextElementSibling.style.display='flex'">
-                    <span class="h-logo-fallback" style="display:none">${initials}</span>
+                    <img src="" alt="${initials}" style="display:none"
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <span class="h-logo-fallback" style="display:flex">${initials}</span>
                 </div>
                 <div class="h-card-name-wrap">
                     <div class="h-card-name" title="${domain}">${domain}</div>
@@ -137,6 +166,12 @@ function buildCard(store, index) {
                 </button>
             </div>
         </div>`;
+
+    // If cached favicon available, set immediately
+    if (store.faviconDataUrl) {
+        const img = card.querySelector('.h-card-logo img');
+        if (img) img.src = store.faviconDataUrl;
+    }
 
     // Clickable store name → open in new tab
     card.querySelector('.h-card-name').addEventListener('click', () => {
