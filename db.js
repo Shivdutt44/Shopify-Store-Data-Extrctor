@@ -105,10 +105,12 @@ async function saveScrapedStore(storeUrl, data) {
     tx.objectStore(STORES.SCRAPED_STORES).put({
       ...existing,
       storeUrl,
-      collections:     data.collections     ?? existing.collections     ?? [],
-      totalProducts:   data.totalProducts   ?? existing.totalProducts   ?? 0,
-      fileSizeBytes:   data.fileSizeBytes   ?? existing.fileSizeBytes   ?? 0,
-      faviconDataUrl:  data.faviconDataUrl  ?? existing.faviconDataUrl  ?? '',
+      collections:              data.collections              ?? existing.collections              ?? [],
+      totalProducts:            data.totalProducts            ?? existing.totalProducts            ?? 0,
+      fileSizeBytes:            data.fileSizeBytes            ?? existing.fileSizeBytes            ?? 0,
+      faviconDataUrl:           data.faviconDataUrl           ?? existing.faviconDataUrl           ?? '',
+      collectionProductCounts:  data.collectionProductCounts  ?? existing.collectionProductCounts  ?? null,
+      collectionProductIds:     data.collectionProductIds     ?? existing.collectionProductIds     ?? null,
       scrapedAt: Date.now(),
     });
     tx.oncomplete = () => resolve(true);

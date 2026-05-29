@@ -78,9 +78,11 @@ async function bgSaveScrapedStore(storeUrl, data) {
         tx.objectStore('scraped_stores').put({
             ...existing, storeUrl,
             collections:    data.collections    ?? existing.collections    ?? [],
-            totalProducts:  data.totalProducts  ?? existing.totalProducts  ?? 0,
-            fileSizeBytes:  data.fileSizeBytes  ?? existing.fileSizeBytes  ?? 0,
-            faviconDataUrl: existing.faviconDataUrl ?? '',
+            totalProducts:           data.totalProducts           ?? existing.totalProducts           ?? 0,
+            fileSizeBytes:           data.fileSizeBytes           ?? existing.fileSizeBytes           ?? 0,
+            faviconDataUrl:          existing.faviconDataUrl      ?? '',
+            collectionProductCounts: data.collectionProductCounts ?? existing.collectionProductCounts ?? null,
+            collectionProductIds:    data.collectionProductIds    ?? existing.collectionProductIds    ?? null,
             scrapedAt: Date.now(),
         });
         tx.oncomplete = () => resolve(true);
@@ -113,6 +115,7 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
             collectionsTotal: 0, productsScraped: 0,
             isIncremental: incrementalOnly,
             error: null, completedAt: null,
+            startedAt: Date.now(),
         }
     });
     setBadge(0, '#8b5cf6');
@@ -136,8 +139,10 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
         if (!incrementalOnly) await bgClearProducts(storeUrl);
 
         let totalNewProducts = 0;
-        const BATCH_SIZE = 50; // write to IndexedDB in batches
+        const BATCH_SIZE = 50;
         let batch = [];
+        const collectionProductCounts = {}; // handle → count
+        const colProductIds           = {}; // handle → [id, id, ...]
 
         async function flushBatch() {
             if (!batch.length) return;
@@ -147,8 +152,8 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
 
         for (let i = 0; i < collections.length; i++) {
             const col = collections[i];
-            let page = 1;
-            let hasMore = true;
+            let page = 1, hasMore = true;
+            colProductIds[col.handle] = [];
 
             while (hasMore) {
                 const progress = 15 + Math.floor(((i + (page - 1) * 0.1) / collections.length) * 80);
@@ -167,6 +172,7 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
                     if (!data.products?.length) { hasMore = false; break; }
 
                     for (const p of data.products) {
+                        colProductIds[col.handle].push(String(p.id)); // track membership
                         if (incrementalOnly && existingIds.has(String(p.id))) continue;
                         batch.push({ ...p, collection_title: col.title, collection_handle: col.handle });
                         totalNewProducts++;
@@ -178,6 +184,8 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
                     page++;
                 } catch { hasMore = false; }
             }
+
+            collectionProductCounts[col.handle] = colProductIds[col.handle].length;
         }
 
         await flushBatch(); // flush remaining
@@ -193,7 +201,7 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
         // Estimate file size
         const fileSizeBytes = totalCount * 750; // ~750 bytes per product avg
 
-        await bgSaveScrapedStore(storeUrl, { collections, totalProducts: totalCount, fileSizeBytes });
+        await bgSaveScrapedStore(storeUrl, { collections, totalProducts: totalCount, fileSizeBytes, collectionProductCounts, collectionProductIds: colProductIds });
 
         await setScrapingState({
             isRunning: false, progress: 100,
@@ -219,7 +227,7 @@ async function startBackgroundScraping(storeUrl, incrementalOnly = false) {
 }
 
 // Listen for messages from content scripts or popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
     if (request.action === "fetchFavicon") {
         fetchFaviconAsBase64(request.storeUrl)
@@ -367,7 +375,7 @@ function isShopifyStore() {
 }
 
 // Handle extension icon click
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener((_tab) => {
     // This will open the popup when the extension icon is clicked
     // The popup.html is set as the default in manifest.json
 });
@@ -386,7 +394,9 @@ async function fetchFaviconAsBase64(storeUrl) {
 
     for (const url of candidates) {
         try {
-            const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            const ctrl = new AbortController();
+            setTimeout(() => ctrl.abort(), 4000);
+            const resp = await fetch(url, { signal: ctrl.signal });
             if (!resp.ok) continue;
             const contentType = resp.headers.get('content-type') || '';
             // Skip HTML responses (redirect to homepage)

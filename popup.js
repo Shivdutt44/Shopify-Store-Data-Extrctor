@@ -3,6 +3,7 @@ let allProductsData = [];
 let currentStoreCollections = [];
 let currentStoreUrl = '';
 let isExtracting = false;
+let collectionProductIds = {}; // handle → Set of product IDs (for accurate filtering)
 
 document.addEventListener('DOMContentLoaded', function () {
     // Use existing stats container from HTML
@@ -169,27 +170,39 @@ async function loadCompletedScrape(state) {
     updateProgress(100, state.isIncremental
         ? `Done! ${state.productsScraped} new products added.`
         : `Complete! ${products.length} products scraped.`);
-    // Enable buttons and show collection dropdown
-    populateCachedCollectionDropdown(currentStoreCollections);
-    const downloadBtn = document.getElementById('downloadBtn');
-    const viewResultsBtn = document.getElementById('viewResultsBtn');
-    if (downloadBtn) downloadBtn.disabled = false;
-    if (viewResultsBtn) viewResultsBtn.disabled = false;
-    const resultsSection = document.querySelector('.results-section');
-    if (resultsSection) resultsSection.style.display = 'block';
+    // Load accurate per-collection data from DB
+    collectionProductIds = cached.collectionProductIds || {};
+    populateCachedCollectionDropdown(currentStoreCollections, cached.collectionProductCounts || null);
+    document.getElementById('downloadBtn').disabled = false;
+    document.getElementById('viewResultsBtn').disabled = false;
+    document.querySelector('.results-section').style.display = 'block';
 }
 
 async function checkCacheAndStart() {
     if (!currentStoreUrl) { startExtraction(); return; }
 
-    // First check if background is already scraping this store
+    // Check if background is actively scraping this store
     const stored = await chrome.storage.local.get('bgScrapeState');
     const bgState = stored.bgScrapeState;
-    if (bgState && bgState.isRunning && bgState.storeUrl === currentStoreUrl) {
+
+    // A state is "fresh" only if started within last 10 minutes
+    const TEN_MIN = 10 * 60 * 1000;
+    const isFresh = bgState
+        && bgState.isRunning
+        && bgState.storeUrl === currentStoreUrl
+        && (Date.now() - (bgState.startedAt || 0)) < TEN_MIN;
+
+    if (isFresh) {
+        // Background IS running — attach listener and show live progress
         isExtracting = true;
         applyBgState(bgState);
         attachProgressListener();
         return;
+    }
+
+    // Stale/finished state — clear it so it doesn't block future scrapes
+    if (bgState && bgState.isRunning) {
+        await chrome.storage.local.remove('bgScrapeState');
     }
 
     // Check IndexedDB cache
@@ -200,7 +213,10 @@ async function checkCacheAndStart() {
     allProductsData = products;
     currentStoreCollections = cached.collections || [];
     chrome.storage.local.set({ storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl } });
+    // Load accurate per-collection data
+    collectionProductIds = cached.collectionProductIds || {};
     showCachedBanner(cached);
+    populateCachedCollectionDropdown(currentStoreCollections, cached.collectionProductCounts || null);
 }
 
 function showCachedBanner(cached) {
@@ -237,23 +253,45 @@ function hideCachedBanner() {
     document.getElementById('newProductsResult').style.display = 'none';
 }
 
-function populateCachedCollectionDropdown(collections) {
+function populateCachedCollectionDropdown(collections, counts = null) {
     const collectionSelector = document.getElementById('collectionSelector');
-    const collectionSelect = document.getElementById('collectionSelect');
-    const collectionInfo = document.getElementById('collectionInfo');
-
+    const collectionSelect   = document.getElementById('collectionSelect');
+    const collectionInfo     = document.getElementById('collectionInfo');
     if (!collectionSelect) return;
 
-    collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
+    // Build per-handle count map
+    // Priority: passed-in counts (from scrape or DB) > calculated from allProductsData
+    let countByHandle = counts || null;
 
-    const countByHandle = {};
-    allProductsData.forEach(p => {
-        const h = p.collection_handle || p.collectionHandle;
-        if (h) countByHandle[h] = (countByHandle[h] || 0) + 1;
-    });
+    if (!countByHandle) {
+        countByHandle = {};
+        allProductsData.forEach(p => {
+            const h = p.collection_handle || p.collectionHandle;
+            if (h) countByHandle[h] = (countByHandle[h] || 0) + 1;
+        });
+    }
 
+    collectionSelect.innerHTML = '';
+
+    let grandTotal = 0;
+    if (counts) {
+        // Use the exact counts from scraping
+        grandTotal = Object.values(counts).reduce((s, n) => s + n, 0);
+    } else {
+        grandTotal = allProductsData.length;
+    }
+
+    // "All Collections" option
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = `All Collections (${grandTotal} products)`;
+    allOpt.dataset.count = grandTotal;
+    collectionSelect.appendChild(allOpt);
+
+    // Individual collections — only show those with products
     collections.forEach(col => {
         const count = countByHandle[col.handle] || 0;
+        if (count === 0) return; // hide empty collections
         const opt = document.createElement('option');
         opt.value = col.handle;
         opt.textContent = `${col.title} (${count} products)`;
@@ -261,17 +299,13 @@ function populateCachedCollectionDropdown(collections) {
         collectionSelect.appendChild(opt);
     });
 
-    const total = allProductsData.length;
-    const allOpt = collectionSelect.querySelector('option[value="all"]');
-    if (allOpt) { allOpt.textContent = `All Collections (${total} products)`; allOpt.dataset.count = total; }
-    if (collectionInfo) collectionInfo.textContent = `${collections.length} collections · ${total} products (cached)`;
+    if (collectionInfo) collectionInfo.textContent = `${collections.length} collections · ${grandTotal} products`;
     if (collectionSelector) collectionSelector.style.display = 'block';
 
-    // Update stats
     const collectionsCount = document.getElementById('collectionsCount');
-    const productsCount = document.getElementById('productsCount');
+    const productsCount    = document.getElementById('productsCount');
     if (collectionsCount) collectionsCount.textContent = collections.length;
-    if (productsCount) productsCount.textContent = total;
+    if (productsCount)    productsCount.textContent = grandTotal;
 }
 
 async function checkForNewProducts() {
@@ -287,8 +321,13 @@ async function checkForNewProducts() {
     updateProgress(0, 'Checking for new products...');
     isExtracting = true;
 
-    // Delegate to background (incremental mode)
-    chrome.runtime.sendMessage({ action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: true });
+    // Try background first, fallback to popup incremental scrape
+    chrome.runtime.sendMessage({ action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: true }, (resp) => {
+        if (chrome.runtime.lastError || !resp?.started) {
+            // Fallback: run incremental scrape in popup
+            runPopupIncrementalScrape(btn, resultDiv);
+        }
+    });
 
     attachProgressListener();
 
@@ -322,36 +361,207 @@ async function checkForNewProducts() {
     chrome.storage.onChanged.addListener(onDone);
 }
 
+async function runPopupIncrementalScrape(btn, resultDiv) {
+    try {
+        const existing = await ShopifyDB.getProductsByStore(currentStoreUrl);
+        const existingIds = new Set(existing.map(p => String(p.id)));
+        const newProducts = [];
+
+        for (let i = 0; i < currentStoreCollections.length; i++) {
+            const col = currentStoreCollections[i];
+            let page = 1, hasMore = true;
+            while (hasMore) {
+                updateProgress(Math.floor((i / currentStoreCollections.length) * 90), `Checking ${col.title}…`);
+                try {
+                    const resp = await fetch(`${currentStoreUrl}/collections/${col.handle}/products.json?limit=250&page=${page}`, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { hasMore = false; break; }
+                    const data = await resp.json();
+                    if (!data.products?.length) { hasMore = false; break; }
+                    data.products.forEach(p => {
+                        if (!existingIds.has(String(p.id))) newProducts.push({ ...p, collection_title: col.title, collection_handle: col.handle });
+                    });
+                    hasMore = data.products.length === 250; page++;
+                } catch { hasMore = false; }
+            }
+        }
+
+        if (newProducts.length === 0) {
+            resultDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#10b981"></i> No new products found. Your data is up to date!`;
+        } else {
+            await ShopifyDB.saveProducts(currentStoreUrl, newProducts);
+            allProductsData = [...allProductsData, ...newProducts];
+            await ShopifyDB.saveScrapedStore(currentStoreUrl, { collections: currentStoreCollections, totalProducts: allProductsData.length });
+            chrome.storage.local.set({ storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl } });
+            populateCachedCollectionDropdown(currentStoreCollections);
+            resultDiv.innerHTML = `<i class="fas fa-plus-circle" style="color:#6366f1"></i> <strong>${newProducts.length} new products</strong> added! Download CSV to get updated sheet.`;
+        }
+        resultDiv.style.display = 'block';
+        updateProgress(100, 'Done!');
+    } catch (err) {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#ef4444"></i> Error: ${err.message}`;
+    } finally {
+        isExtracting = false;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync-alt"></i> Check New Products';
+        ShopifyDB.getScrapedStore(currentStoreUrl).then(c => { if (c) showCachedBanner(c); });
+    }
+}
+
 // ── End Smart Cache Logic ────────────────────────────────────────────────────
+
+function resetExtractionUI() {
+    allProductsData = [];
+    currentStoreCollections = [];
+    const els = {
+        downloadBtn:       document.getElementById('downloadBtn'),
+        viewResultsBtn:    document.getElementById('viewResultsBtn'),
+        extractBtn:        document.getElementById('extractBtn'),
+        statsContainer:    document.getElementById('statsContainer'),
+        collectionSelector:document.getElementById('collectionSelector'),
+        collectionSelect:  document.getElementById('collectionSelect'),
+        progressSection:   document.querySelector('.progress-section'),
+        cachedBanner:      document.getElementById('cachedBanner'),
+    };
+    if (els.downloadBtn)    els.downloadBtn.disabled = true;
+    if (els.viewResultsBtn) els.viewResultsBtn.disabled = true;
+    if (els.extractBtn)     { els.extractBtn.disabled = true; els.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Extracting...</span>'; }
+    if (els.statsContainer)    els.statsContainer.style.display = 'grid';
+    if (els.collectionSelector) els.collectionSelector.style.display = 'none';
+    if (els.collectionSelect)  els.collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
+    if (els.progressSection)   els.progressSection.style.display = 'block';
+    if (els.cachedBanner)      els.cachedBanner.style.display = 'none';
+}
 
 function startExtraction() {
     if (isExtracting) return;
     isExtracting = true;
-
-    // Reset UI
-    allProductsData = [];
-    currentStoreCollections = [];
-    const downloadBtn   = document.getElementById('downloadBtn');
-    const viewResultsBtn = document.getElementById('viewResultsBtn');
-    const extractBtn    = document.getElementById('extractBtn');
-    const statsContainer = document.getElementById('statsContainer');
-    const collectionSelector = document.getElementById('collectionSelector');
-    const collectionSelect   = document.getElementById('collectionSelect');
-    if (downloadBtn)   downloadBtn.disabled = true;
-    if (viewResultsBtn) viewResultsBtn.disabled = true;
-    if (extractBtn)   { extractBtn.disabled = true; extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Extracting...</span>'; }
-    if (statsContainer) statsContainer.style.display = 'none';
-    if (collectionSelector) collectionSelector.style.display = 'none';
-    if (collectionSelect) collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
-
-    updateProgress(0, 'Starting background extraction...');
-
-    // Delegate to background service worker — survives popup close
-    chrome.runtime.sendMessage({ action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: false });
-    attachProgressListener();
+    resetExtractionUI();
+    updateProgress(0, 'Connecting to store...');
+    tryBackgroundScrape(0);
 }
 
-// fetchStoreData removed — scraping now handled by background.js via startBackgroundScraping()
+function tryBackgroundScrape(attempt) {
+    chrome.runtime.sendMessage(
+        { action: 'startScraping', storeUrl: currentStoreUrl, incrementalOnly: false },
+        (response) => {
+            if (chrome.runtime.lastError || !response?.started) {
+                if (attempt < 2) {
+                    // Retry up to 2 times
+                    setTimeout(() => tryBackgroundScrape(attempt + 1), 600);
+                } else {
+                    // All retries failed → run directly in popup
+                    console.warn('Background unavailable, running scraping in popup.');
+                    fetchStoreData();
+                }
+                return;
+            }
+            // Background accepted — listen for storage updates
+            attachProgressListener();
+        }
+    );
+}
+
+async function fetchStoreData() {
+    if (!currentStoreUrl) {
+        showError('No store URL detected. Please navigate to a Shopify store first.');
+        isExtracting = false; return;
+    }
+
+    updateProgress(5, 'Fetching collections...');
+
+    try {
+        const colResp = await fetch(`${currentStoreUrl}/collections.json`, { headers: { 'Accept': 'application/json' } });
+        if (!colResp.ok) throw new Error(`HTTP ${colResp.status}`);
+        const colData = await colResp.json();
+        const collections = colData.collections || [];
+        if (!collections.length) throw new Error('No collections found in this store');
+
+        currentStoreCollections = collections;
+        document.getElementById('collectionsCount').textContent = collections.length;
+        updateProgress(15, `Found ${collections.length} collections`);
+
+        // Scrape — track exact IDs and counts per collection
+        const colProductCounts = {};    // handle → count (for dropdown display)
+        const colProductIds    = {};    // handle → [id, id, ...] (for accurate CSV filter)
+        const seenIds = new Set();      // global dedup for unique product storage
+
+        for (let i = 0; i < collections.length; i++) {
+            const col = collections[i];
+            let page = 1, hasMore = true;
+            colProductIds[col.handle] = [];
+
+            while (hasMore) {
+                const progress = 15 + Math.floor(((i + (page - 1) * 0.1) / collections.length) * 80);
+                updateProgress(Math.min(progress, 94), `${col.title} — page ${page}…`);
+                chrome.action.setBadgeText({ text: String(seenIds.size || '') });
+                chrome.action.setBadgeBackgroundColor({ color: '#8b5cf6' });
+
+                try {
+                    const resp = await fetch(
+                        `${currentStoreUrl}/collections/${col.handle}/products.json?limit=250&page=${page}`,
+                        { headers: { 'Accept': 'application/json' } }
+                    );
+                    if (!resp.ok) { hasMore = false; break; }
+                    const data = await resp.json();
+                    if (!data.products?.length) { hasMore = false; break; }
+
+                    data.products.forEach(p => {
+                        const pid = String(p.id);
+                        colProductIds[col.handle].push(pid); // record membership
+                        if (!seenIds.has(pid)) {
+                            seenIds.add(pid);
+                            allProductsData.push({ ...p, collection_title: col.title, collection_handle: col.handle });
+                        }
+                    });
+
+                    document.getElementById('productsCount').textContent = seenIds.size;
+                    chrome.action.setBadgeText({ text: String(seenIds.size) });
+
+                    hasMore = data.products.length === 250;
+                    page++;
+                } catch { hasMore = false; }
+            }
+
+            colProductCounts[col.handle] = colProductIds[col.handle].length;
+        }
+
+        // Set module-level map for download filtering
+        collectionProductIds = colProductIds;
+
+        // Save to IndexedDB
+        await ShopifyDB.saveProducts(currentStoreUrl, allProductsData);
+        const fileSizeBytes = new Blob([JSON.stringify(allProductsData)]).size;
+        await ShopifyDB.saveScrapedStore(currentStoreUrl, {
+            collections: currentStoreCollections,
+            totalProducts: allProductsData.length,
+            fileSizeBytes,
+            collectionProductCounts: colProductCounts,
+            collectionProductIds:    colProductIds,
+        });
+
+        chrome.storage.local.set({ storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl } });
+
+        updateProgress(100, `Complete! ${allProductsData.length} products scraped.`);
+        chrome.action.setBadgeText({ text: '✓' });
+        chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+        setTimeout(() => chrome.action.setBadgeText({ text: '' }), 3000);
+
+        // Build dropdown with accurate per-collection counts
+        populateCachedCollectionDropdown(currentStoreCollections, collectionProductCounts);
+        document.getElementById('downloadBtn').disabled = false;
+        document.getElementById('viewResultsBtn').disabled = false;
+        document.querySelector('.results-section').style.display = 'block';
+
+    } catch (err) {
+        updateProgress(100, 'Extraction failed', true);
+        showError(`<div class="error-title"><i class="fas fa-times-circle"></i> Extraction Failed</div><div class="error-message">${err.message}</div>`);
+        chrome.action.setBadgeText({ text: '' });
+    } finally {
+        isExtracting = false;
+        resetExtractButton();
+    }
+}
 
 function fetchWithTimeout(url, options = {}, timeout = 10000) {
     return new Promise((resolve, reject) => {
@@ -523,13 +733,26 @@ function downloadProductsCSV() {
     let fileNameBase = `${storeName}_products_${dateStr}`;
 
     if (selectedCollectionHandle !== 'all') {
-        productsToExport = allProductsData.filter(
-            p => p.collection_handle === selectedCollectionHandle
-        );
+        // Use stored product ID list for this collection (accurate — works even if product
+        // belongs to multiple collections and was saved under a different handle in IndexedDB)
+        const idsForCollection = new Set(collectionProductIds[selectedCollectionHandle] || []);
+        if (idsForCollection.size > 0) {
+            productsToExport = allProductsData.filter(p => idsForCollection.has(String(p.id)));
+        } else {
+            // Fallback: filter by collection_handle field
+            productsToExport = allProductsData.filter(p => p.collection_handle === selectedCollectionHandle);
+        }
 
-        const selectedCollection = currentStoreCollections.find(
-            c => c.handle === selectedCollectionHandle
-        );
+        // Set correct collection_title on exported products
+        const selectedCollection = currentStoreCollections.find(c => c.handle === selectedCollectionHandle);
+        if (selectedCollection) {
+            productsToExport = productsToExport.map(p => ({
+                ...p,
+                collection_title: selectedCollection.title,
+                collection_handle: selectedCollection.handle,
+            }));
+        }
+
         const collectionTitle = selectedCollection ?
             selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
