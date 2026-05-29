@@ -26,7 +26,7 @@
     }
   ],
   "web_accessible_resources": [{
-    "resources": ["results.html", "results.js", "results.css", "db.js"],
+    "resources": ["results.html", "results.js", "results.css", "db.js", "history.html", "history.js", "history.css"],
     "matches": ["<all_urls>"]
   }],
   "icons": {

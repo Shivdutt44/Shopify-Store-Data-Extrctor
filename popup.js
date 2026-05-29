@@ -1301,126 +1301,16 @@ function detectShopifyTheme() {
     return result;
 }
 
-// ── Hamburger / Scrape History Drawer ───────────────────────────────────────
+// ── Hamburger → opens History Window ────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', function () {
-    const hamburgerBtn = document.getElementById('hamburgerBtn');
-    const historyDrawer = document.getElementById('historyDrawer');
-    const historyOverlay = document.getElementById('historyOverlay');
-    const historyClose = document.getElementById('historyClose');
-    const clearAllBtn = document.getElementById('clearAllHistoryBtn');
-
-    function openDrawer() {
-        historyDrawer.classList.add('open');
-        historyOverlay.classList.add('active');
-        hamburgerBtn.classList.add('open');
-        loadHistory();
-    }
-
-    function closeDrawer() {
-        historyDrawer.classList.remove('open');
-        historyOverlay.classList.remove('active');
-        hamburgerBtn.classList.remove('open');
-    }
-
-    hamburgerBtn.addEventListener('click', openDrawer);
-    historyClose.addEventListener('click', closeDrawer);
-    historyOverlay.addEventListener('click', closeDrawer);
-
-    clearAllBtn.addEventListener('click', async () => {
-        if (!confirm('Clear all scrape history? This will delete all cached store data.')) return;
-        const stores = await ShopifyDB.getAllScrapedStores();
-        for (const s of stores) {
-            await ShopifyDB.deleteScrapedStore(s.storeUrl);
-        }
-        loadHistory();
+    document.getElementById('hamburgerBtn').addEventListener('click', () => {
+        chrome.windows.create({
+            url: chrome.runtime.getURL('history.html'),
+            type: 'popup',
+            width: Math.min(screen.availWidth, 1100),
+            height: Math.min(screen.availHeight, 700),
+            focused: true
+        });
     });
 });
-
-async function loadHistory() {
-    const list = document.getElementById('historyList');
-    list.innerHTML = '<div class="history-empty"><i class="fas fa-spinner fa-spin"></i>Loading...</div>';
-
-    const stores = await ShopifyDB.getAllScrapedStores();
-
-    if (!stores || stores.length === 0) {
-        list.innerHTML = `
-            <div class="history-empty">
-                <i class="fas fa-inbox"></i>
-                No scrape history yet.<br>Extract a store to see it here.
-            </div>`;
-        return;
-    }
-
-    // Sort newest first
-    stores.sort((a, b) => b.scrapedAt - a.scrapedAt);
-
-    list.innerHTML = '';
-
-    stores.forEach(store => {
-        let domain = store.storeUrl;
-        try { domain = new URL(store.storeUrl).hostname; } catch {}
-
-        const date = new Date(store.scrapedAt);
-        const dateStr = date.toLocaleDateString('en-IN', {
-            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        });
-
-        const card = document.createElement('div');
-        card.className = 'history-card';
-        card.innerHTML = `
-            <div class="history-card-domain" title="${store.storeUrl}">${domain}</div>
-            <div class="history-card-meta">
-                <span>${store.totalProducts || 0} products</span>
-                <span>${(store.collections || []).length} collections</span>
-                <br><small style="color:var(--text-secondary)">${dateStr}</small>
-            </div>
-            <div class="history-card-actions">
-                <button class="hc-btn hc-btn-load" data-url="${store.storeUrl}">
-                    <i class="fas fa-upload"></i> Load
-                </button>
-                <button class="hc-btn hc-btn-delete" data-url="${store.storeUrl}">
-                    <i class="fas fa-trash"></i> Delete
-                </button>
-            </div>`;
-
-        // Load button — loads this store's data into popup
-        card.querySelector('.hc-btn-load').addEventListener('click', async (e) => {
-            const url = e.currentTarget.dataset.url;
-            await loadStoreFromHistory(url);
-            // Close drawer
-            document.getElementById('historyDrawer').classList.remove('open');
-            document.getElementById('historyOverlay').classList.remove('active');
-            document.getElementById('hamburgerBtn').classList.remove('open');
-        });
-
-        // Delete button
-        card.querySelector('.hc-btn-delete').addEventListener('click', async (e) => {
-            const url = e.currentTarget.dataset.url;
-            if (!confirm(`Delete cached data for ${domain}?`)) return;
-            await ShopifyDB.deleteScrapedStore(url);
-            loadHistory();
-        });
-
-        list.appendChild(card);
-    });
-}
-
-async function loadStoreFromHistory(storeUrl) {
-    const cached = await ShopifyDB.getScrapedStore(storeUrl);
-    if (!cached) return;
-
-    const products = await ShopifyDB.getProductsByStore(storeUrl);
-
-    // Set global state
-    currentStoreUrl = storeUrl;
-    allProductsData = products;
-    currentStoreCollections = cached.collections || [];
-
-    // Push to chrome.storage for results page
-    chrome.storage.local.set({
-        storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl }
-    });
-
-    showCachedBanner(cached);
-}

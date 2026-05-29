@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrape History – Shopify Data Extractor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="history.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="h-header">
+        <div class="h-header-left">
+            <div class="h-logo">
+                <i class="fas fa-store-alt"></i>
+                <span>Shopify Data Extractor</span>
+            </div>
+            <div class="h-subtitle">Scrape History</div>
+        </div>
+        <div class="h-header-right">
+            <div class="h-search-wrap">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Search stores..." />
+            </div>
+            <button class="h-btn h-btn-danger" id="clearAllBtn">
+                <i class="fas fa-trash-alt"></i> Clear All
+            </button>
+        </div>
+    </header>
+
+    <!-- Stats Bar -->
+    <div class="h-stats-bar">
+        <div class="h-stat">
+            <span id="totalStores">0</span>
+            <label>Stores Scraped</label>
+        </div>
+        <div class="h-stat">
+            <span id="totalProducts">0</span>
+            <label>Total Products</label>
+        </div>
+        <div class="h-stat">
+            <span id="totalCollections">0</span>
+            <label>Total Collections</label>
+        </div>
+    </div>
+
+    <!-- Grid -->
+    <main class="h-main">
+        <div class="h-grid" id="historyGrid">
+            <div class="h-loading" id="loadingState">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Loading history...</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Share Modal -->
+    <div class="h-modal-overlay" id="shareModal" style="display:none;">
+        <div class="h-modal">
+            <div class="h-modal-header">
+                <span><i class="fas fa-share-alt"></i> Share Store Data</span>
+                <button class="h-modal-close" id="shareModalClose"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="h-modal-body">
+                <p class="h-modal-store" id="shareStoreName"></p>
+                <div class="h-share-options">
+                    <button class="h-share-btn" data-action="copy">
+                        <i class="fas fa-copy"></i>
+                        <span>Copy Store URL</span>
+                    </button>
+                    <button class="h-share-btn" data-action="whatsapp">
+                        <i class="fab fa-whatsapp"></i>
+                        <span>Share on WhatsApp</span>
+                    </button>
+                    <button class="h-share-btn" data-action="email">
+                        <i class="fas fa-envelope"></i>
+                        <span>Share via Email</span>
+                    </button>
+                    <button class="h-share-btn" data-action="twitter">
+                        <i class="fab fa-twitter"></i>
+                        <span>Share on Twitter</span>
+                    </button>
+                </div>
+                <div class="h-share-copied" id="shareCopied" style="display:none;">
+                    <i class="fas fa-check-circle"></i> Copied to clipboard!
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="db.js"></script>
+    <script src="history.js"></script>
+</body>
+</html>
