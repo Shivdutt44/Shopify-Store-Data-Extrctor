@@ -563,9 +563,11 @@ async function fetchStoreData() {
             });
 
             // Save to IndexedDB for smart caching
+            const estimatedBytes = new Blob([JSON.stringify(allProductsData)]).size;
             await ShopifyDB.saveScrapedStore(currentStoreUrl, {
                 collections: currentStoreCollections,
                 totalProducts: allProductsData.length,
+                fileSizeBytes: estimatedBytes,
             });
             await ShopifyDB.saveProducts(currentStoreUrl, allProductsData);
 

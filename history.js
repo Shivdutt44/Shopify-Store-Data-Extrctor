@@ -35,8 +35,42 @@ async function renderHistory() {
 
     grid.innerHTML = '';
     allStores.forEach((store, i) => {
-        grid.appendChild(buildCard(store, i));
+        const card = buildCard(store, i);
+        grid.appendChild(card);
+        // If fileSize not yet calculated, compute it async and update badge
+        if (!store.fileSizeBytes || store.fileSizeBytes === 0) {
+            computeAndUpdateFileSize(store, card);
+        }
     });
+}
+
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '—';
+    if (bytes < 1024)          return `${bytes} B`;
+    if (bytes < 1024 * 1024)   return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function computeAndUpdateFileSize(store, card) {
+    try {
+        const products = await ShopifyDB.getProductsByStore(store.storeUrl);
+        if (!products || products.length === 0) return;
+
+        const bytes = new Blob([JSON.stringify(products)]).size;
+
+        // Update DB record
+        await ShopifyDB.saveScrapedStore(store.storeUrl, {
+            collections: store.collections || [],
+            totalProducts: store.totalProducts || products.length,
+            fileSizeBytes: bytes,
+        });
+
+        // Update badge in the already-rendered card
+        const badge = card.querySelector('.h-badge-size span');
+        if (badge) badge.textContent = formatBytes(bytes);
+    } catch (e) {
+        console.error('File size calc error:', e);
+    }
 }
 
 function buildCard(store, index) {
@@ -53,8 +87,10 @@ function buildCard(store, index) {
 
     const totalProds = store.totalProducts || 0;
     const totalCols  = (store.collections || []).length;
+    const fileSize   = formatBytes(store.fileSizeBytes || 0);
 
-    const faviconUrl = `${store.storeUrl}/favicon.ico`;
+    // Google Favicon API — reliable across all Shopify stores
+    const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 
     const card = document.createElement('div');
     card.className = 'h-card';
@@ -65,8 +101,8 @@ function buildCard(store, index) {
         <div class="h-card-body">
             <div class="h-card-identity">
                 <div class="h-card-logo">
-                    <img src="${faviconUrl}" alt="logo"
-                         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+                    <img src="${faviconUrl}" alt="${initials}"
+                         onerror="this.src='';this.style.display='none';this.nextElementSibling.style.display='flex'">
                     <span class="h-logo-fallback" style="display:none">${initials}</span>
                 </div>
                 <div class="h-card-name-wrap">
@@ -78,6 +114,7 @@ function buildCard(store, index) {
             <div class="h-card-badges">
                 <div class="h-badge"><i class="fas fa-cubes"></i> ${totalProds} Products</div>
                 <div class="h-badge"><i class="fas fa-layer-group"></i> ${totalCols} Collections</div>
+                <div class="h-badge h-badge-size"><i class="fas fa-file-csv"></i> <span>${fileSize}</span></div>
             </div>
 
             <div class="h-card-date">

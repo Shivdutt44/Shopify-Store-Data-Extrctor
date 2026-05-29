@@ -104,6 +104,7 @@ async function saveScrapedStore(storeUrl, data) {
       storeUrl,
       collections: data.collections || [],
       totalProducts: data.totalProducts || 0,
+      fileSizeBytes: data.fileSizeBytes || 0,
       scrapedAt: Date.now(),
     });
     tx.oncomplete = () => resolve(true);
