@@ -659,8 +659,11 @@ function downloadCollectionsCSV() {
     const collectionSelect = document.getElementById('collectionSelect');
     const selectedCollectionHandle = collectionSelect ? collectionSelect.value : 'all';
 
+    const storeName = getStoreNameSlug();
+    const dateStr = new Date().toISOString().slice(0, 10);
+
     let collectionsToExport = currentStoreCollections;
-    let fileName = `shopify_collections_${new Date().toISOString().slice(0, 10)}.csv`;
+    let fileName = `${storeName}_collections_${dateStr}.csv`;
 
     if (selectedCollectionHandle !== 'all') {
         collectionsToExport = currentStoreCollections.filter(
@@ -673,7 +676,7 @@ function downloadCollectionsCSV() {
         const collectionTitle = selectedCollection ?
             selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
-        fileName = `shopify_collections_${collectionTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
+        fileName = `${storeName}_collections_${collectionTitle}_${dateStr}.csv`;
     }
 
     // Filter out collections with 0 products
@@ -755,8 +758,13 @@ function downloadCollectionsCSV() {
     }, 100);
 }
 
-// Maximum CSV file size (14MB to stay safely under Shopify's 15MB limit)
-const MAX_CSV_SIZE = 14 * 1024 * 1024; // 14MB in bytes
+function getStoreNameSlug() {
+    try {
+        return new URL(currentStoreUrl).hostname.replace(/\./g, '_');
+    } catch {
+        return 'store';
+    }
+}
 
 function downloadProductsCSV() {
     if (allProductsData.length === 0) {
@@ -766,23 +774,24 @@ function downloadProductsCSV() {
 
     const collectionSelect = document.getElementById('collectionSelect');
     const selectedCollectionHandle = collectionSelect ? collectionSelect.value : 'all';
+    const storeName = getStoreNameSlug();
+    const dateStr = new Date().toISOString().slice(0, 10);
 
     let productsToExport = allProductsData;
-    let fileNameBase = `shopify_products_${new Date().toISOString().slice(0, 10)}`;
+    let fileNameBase = `${storeName}_products_${dateStr}`;
 
     if (selectedCollectionHandle !== 'all') {
         productsToExport = allProductsData.filter(
             p => p.collection_handle === selectedCollectionHandle
         );
 
-        // Get the collection title for the filename
         const selectedCollection = currentStoreCollections.find(
             c => c.handle === selectedCollectionHandle
         );
         const collectionTitle = selectedCollection ?
             selectedCollection.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() :
             selectedCollectionHandle;
-        fileNameBase = `shopify_products_${collectionTitle}_${new Date().toISOString().slice(0, 10)}`;
+        fileNameBase = `${storeName}_${collectionTitle}_${dateStr}`;
     }
 
     if (productsToExport.length === 0) {
@@ -872,55 +881,8 @@ function downloadProductsCSV() {
         }
     });
 
-    // Calculate total size
     const headerRow = headers.join(',');
-    const totalContent = "\uFEFF" + headerRow + '\n' + allRows.join('\n');
-    const totalSize = new Blob([totalContent]).size;
-
-    // If under limit, download as single file
-    if (totalSize <= MAX_CSV_SIZE) {
-        downloadCSVChunk([headerRow, ...allRows], `${fileNameBase}.csv`);
-        return;
-    }
-
-    // Split into multiple files
-    const chunks = [];
-    let currentChunk = [headerRow];
-    let currentSize = new Blob(["\uFEFF" + headerRow]).size;
-
-    for (const row of allRows) {
-        const rowSize = new Blob([row]).size + 1; // +1 for newline
-
-        if (currentSize + rowSize > MAX_CSV_SIZE && currentChunk.length > 1) {
-            // Save current chunk and start new one
-            chunks.push(currentChunk);
-            currentChunk = [headerRow, row];
-            currentSize = new Blob(["\uFEFF" + headerRow + '\n' + row]).size;
-        } else {
-            currentChunk.push(row);
-            currentSize += rowSize;
-        }
-    }
-
-    // Don't forget the last chunk
-    if (currentChunk.length > 1) {
-        chunks.push(currentChunk);
-    }
-
-    // Download all chunks
-    chunks.forEach((chunk, index) => {
-        const chunkFileName = `${fileNameBase}_part${index + 1}of${chunks.length}.csv`;
-        setTimeout(() => {
-            downloadCSVChunk(chunk, chunkFileName);
-        }, index * 500); // Stagger downloads to avoid browser issues
-    });
-
-    // Show notification about multiple files
-    if (chunks.length > 1) {
-        setTimeout(() => {
-            alert(`CSV file was split into ${chunks.length} parts due to Shopify's 15MB import limit.\n\nPlease import each part separately into Shopify.`);
-        }, chunks.length * 500 + 100);
-    }
+    downloadCSVChunk([headerRow, ...allRows], `${fileNameBase}.csv`);
 }
 
 function downloadCSVChunk(rows, fileName) {
