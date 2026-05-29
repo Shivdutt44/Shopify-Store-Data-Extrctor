@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Add-Content -Path 'd:\\\\BoostStar Experts\\\\Boost AUGUST\\\\Shopify Scraper\\\\v3.44\\\\popup.css' -Value '@ *)"
+    ]
+  }
+}

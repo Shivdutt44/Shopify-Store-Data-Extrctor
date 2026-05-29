@@ -35,6 +35,28 @@
         <div class="main-content">
             <!-- Extractor Tab Content -->
             <div class="tab-content active" id="extractor-tab">
+
+                <!-- Cached Store Banner (shown when store already scraped) -->
+                <div class="cached-banner" id="cachedBanner" style="display:none;">
+                    <div class="cached-icon"><i class="fas fa-database"></i></div>
+                    <div class="cached-info">
+                        <div class="cached-title">Store Already Scraped!</div>
+                        <div class="cached-meta" id="cachedMeta">Loading...</div>
+                    </div>
+                    <div class="cached-actions">
+                        <button class="btn btn-success btn-sm" id="cachedDownloadBtn">
+                            <i class="fas fa-file-csv"></i> Download Existing
+                        </button>
+                        <button class="btn btn-update btn-sm" id="checkNewBtn">
+                            <i class="fas fa-sync-alt"></i> Check New Products
+                        </button>
+                        <button class="btn btn-ghost btn-sm" id="rescrapeBtn">
+                            <i class="fas fa-redo"></i> Re-scrape All
+                        </button>
+                    </div>
+                    <div class="new-products-result" id="newProductsResult" style="display:none;"></div>
+                </div>
+
                 <div class="progress-section">
                     <div class="progress-title">Extracting Store Data</div>
                     <div class="circular-progress">

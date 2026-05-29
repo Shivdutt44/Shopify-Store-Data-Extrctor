@@ -20,10 +20,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Check if it's a Shopify store
                 checkShopifyStore(currentUrl);
 
-                // Automatically start extraction if not already extracting
+                // Check cache first, then decide whether to scrape
                 if (!isExtracting) {
                     setTimeout(() => {
-                        startExtraction();
+                        checkCacheAndStart();
                     }, 1000);
                 }
             } catch (e) {
@@ -44,6 +44,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     document.getElementById('viewResultsBtn').addEventListener('click', showResultsPage);
     document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
+    document.getElementById('cachedDownloadBtn').addEventListener('click', downloadCSV);
+    document.getElementById('checkNewBtn').addEventListener('click', checkForNewProducts);
+    document.getElementById('rescrapeBtn').addEventListener('click', () => {
+        hideCachedBanner();
+        startExtraction();
+    });
 });
 
 function checkShopifyStore(url) {
@@ -113,6 +119,187 @@ function isShopifyStore() {
 
     return shopifyIndicators.some(indicator => indicator);
 }
+
+// ── Smart Cache Logic ────────────────────────────────────────────────────────
+
+async function checkCacheAndStart() {
+    if (!currentStoreUrl) { startExtraction(); return; }
+
+    const cached = await ShopifyDB.getScrapedStore(currentStoreUrl);
+    if (!cached) { startExtraction(); return; }
+
+    // Load cached products into memory so download works immediately
+    const products = await ShopifyDB.getProductsByStore(currentStoreUrl);
+    allProductsData = products;
+    currentStoreCollections = cached.collections || [];
+
+    // Restore results page data
+    chrome.storage.local.set({
+        storeData: {
+            collections: currentStoreCollections,
+            products: allProductsData,
+            storeUrl: currentStoreUrl
+        }
+    });
+
+    showCachedBanner(cached);
+}
+
+function showCachedBanner(cached) {
+    const banner = document.getElementById('cachedBanner');
+    const progressSection = document.querySelector('.progress-section');
+    const resultsSection = document.querySelector('.results-section');
+
+    // Format date
+    const date = new Date(cached.scrapedAt);
+    const dateStr = date.toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    document.getElementById('cachedMeta').innerHTML =
+        `<strong>${cached.totalProducts} products</strong> from <strong>${cached.collections.length} collections</strong> &nbsp;|&nbsp; Last scraped: ${dateStr}`;
+
+    banner.style.display = 'flex';
+    progressSection.style.display = 'none';
+
+    // Enable collection dropdown & action buttons with cached data
+    populateCachedCollectionDropdown(cached.collections);
+    resultsSection.style.display = 'block';
+
+    const downloadBtn = document.getElementById('downloadBtn');
+    const viewResultsBtn = document.getElementById('viewResultsBtn');
+    if (downloadBtn) downloadBtn.disabled = false;
+    if (viewResultsBtn) viewResultsBtn.disabled = false;
+}
+
+function hideCachedBanner() {
+    document.getElementById('cachedBanner').style.display = 'none';
+    document.querySelector('.progress-section').style.display = 'block';
+    document.getElementById('newProductsResult').style.display = 'none';
+}
+
+function populateCachedCollectionDropdown(collections) {
+    const collectionSelector = document.getElementById('collectionSelector');
+    const collectionSelect = document.getElementById('collectionSelect');
+    const collectionInfo = document.getElementById('collectionInfo');
+
+    if (!collectionSelect) return;
+
+    collectionSelect.innerHTML = '<option value="all">All Collections (All Products)</option>';
+
+    const countByHandle = {};
+    allProductsData.forEach(p => {
+        const h = p.collection_handle || p.collectionHandle;
+        if (h) countByHandle[h] = (countByHandle[h] || 0) + 1;
+    });
+
+    collections.forEach(col => {
+        const count = countByHandle[col.handle] || 0;
+        const opt = document.createElement('option');
+        opt.value = col.handle;
+        opt.textContent = `${col.title} (${count} products)`;
+        opt.dataset.count = count;
+        collectionSelect.appendChild(opt);
+    });
+
+    const total = allProductsData.length;
+    const allOpt = collectionSelect.querySelector('option[value="all"]');
+    if (allOpt) { allOpt.textContent = `All Collections (${total} products)`; allOpt.dataset.count = total; }
+    if (collectionInfo) collectionInfo.textContent = `${collections.length} collections · ${total} products (cached)`;
+    if (collectionSelector) collectionSelector.style.display = 'block';
+
+    // Update stats
+    const collectionsCount = document.getElementById('collectionsCount');
+    const productsCount = document.getElementById('productsCount');
+    if (collectionsCount) collectionsCount.textContent = collections.length;
+    if (productsCount) productsCount.textContent = total;
+}
+
+async function checkForNewProducts() {
+    const btn = document.getElementById('checkNewBtn');
+    const resultDiv = document.getElementById('newProductsResult');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+    resultDiv.style.display = 'none';
+
+    try {
+        // Get existing product IDs from DB
+        const existing = await ShopifyDB.getProductsByStore(currentStoreUrl);
+        const existingIds = new Set(existing.map(p => String(p.id)));
+
+        // Fetch current products from store (all collections)
+        const newProducts = [];
+
+        for (const collection of currentStoreCollections) {
+            let page = 1;
+            let hasMore = true;
+
+            while (hasMore) {
+                const url = `${currentStoreUrl}/collections/${collection.handle}/products.json?limit=250&page=${page}`;
+                try {
+                    const resp = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { hasMore = false; break; }
+
+                    const data = await resp.json();
+                    if (!data.products || data.products.length === 0) { hasMore = false; break; }
+
+                    data.products.forEach(product => {
+                        if (!existingIds.has(String(product.id))) {
+                            newProducts.push({
+                                ...product,
+                                collection_title: collection.title,
+                                collection_handle: collection.handle,
+                            });
+                        }
+                    });
+
+                    hasMore = data.products.length === 250;
+                    page++;
+                } catch (e) { hasMore = false; }
+            }
+        }
+
+        if (newProducts.length === 0) {
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#10b981"></i> No new products found. Your data is up to date!`;
+        } else {
+            // Save new products to DB
+            await ShopifyDB.saveProducts(currentStoreUrl, newProducts);
+
+            // Merge into memory
+            allProductsData = [...allProductsData, ...newProducts];
+
+            // Update store metadata
+            await ShopifyDB.saveScrapedStore(currentStoreUrl, {
+                collections: currentStoreCollections,
+                totalProducts: allProductsData.length,
+            });
+
+            // Update results page storage
+            chrome.storage.local.set({
+                storeData: { collections: currentStoreCollections, products: allProductsData, storeUrl: currentStoreUrl }
+            });
+
+            // Refresh UI
+            populateCachedCollectionDropdown(currentStoreCollections);
+            document.getElementById('cachedMeta').innerHTML =
+                `<strong>${allProductsData.length} products</strong> from <strong>${currentStoreCollections.length} collections</strong> &nbsp;|&nbsp; Updated just now`;
+
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<i class="fas fa-plus-circle" style="color:#6366f1"></i> <strong>${newProducts.length} new products</strong> added to your data! Download CSV to get updated sheet.`;
+        }
+    } catch (err) {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#ef4444"></i> Error checking for new products: ${err.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync-alt"></i> Check New Products';
+    }
+}
+
+// ── End Smart Cache Logic ────────────────────────────────────────────────────
 
 function startExtraction() {
     if (isExtracting) return;
@@ -374,6 +561,13 @@ async function fetchStoreData() {
                     storeUrl: currentStoreUrl
                 }
             });
+
+            // Save to IndexedDB for smart caching
+            await ShopifyDB.saveScrapedStore(currentStoreUrl, {
+                collections: currentStoreCollections,
+                totalProducts: allProductsData.length,
+            });
+            await ShopifyDB.saveProducts(currentStoreUrl, allProductsData);
 
         } else {
             showError('No collections found or data format unexpected. This might not be a Shopify store.');
