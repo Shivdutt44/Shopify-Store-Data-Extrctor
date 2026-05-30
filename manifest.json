@@ -6,11 +6,20 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "1028248991787-iqn8c4h1giu0m3l5s90oh4dc9tul9488.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "host_permissions": [
     "*://*/*",
-    "https://www.google.com/s2/favicons*"
+    "https://www.google.com/s2/favicons*",
+    "https://www.googleapis.com/*"
   ],
   "action": {
     "default_popup": "popup.html",

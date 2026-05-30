@@ -685,3 +685,134 @@ body::before {
     gap: 8px;
     border: 1px solid var(--border);
 }
+
+/* ── Google Auth / Login Screen ───────────────────────────────────────────── */
+
+.login-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: var(--darker);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 420px;
+}
+
+.login-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 40px 32px;
+    width: 100%;
+}
+
+.login-logo {
+    width: 64px;
+    height: 64px;
+    background: var(--accent-gradient);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: #fff;
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.4);
+}
+
+.login-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.login-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: -8px;
+}
+
+.btn-google-signin {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f1f1f;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.btn-google-signin:hover {
+    background: #f5f5f5;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+}
+
+.btn-google-signin:active {
+    transform: translateY(0);
+}
+
+.btn-google-signin:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.google-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.login-error {
+    font-size: 12px;
+    color: var(--error);
+    text-align: center;
+    min-height: 18px;
+}
+
+/* User avatar in header */
+.user-avatar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    object-fit: cover;
+    cursor: default;
+}
+
+.logout-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+}
+
+.logout-btn:hover {
+    color: var(--error);
+    background: rgba(239, 68, 68, 0.1);
+}

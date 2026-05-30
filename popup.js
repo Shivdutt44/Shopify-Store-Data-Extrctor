@@ -5,7 +5,60 @@ let currentStoreUrl = '';
 let isExtracting = false;
 let collectionProductIds = {}; // handle → Set of product IDs (for accurate filtering)
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
+    // ── Auth Gate ─────────────────────────────────────────────────────────────
+    const loginScreen    = document.getElementById('loginScreen');
+    const googleSignInBtn = document.getElementById('googleSignInBtn');
+    const loginError     = document.getElementById('loginError');
+    const userAvatarWrap = document.getElementById('userAvatarWrap');
+    const userAvatar     = document.getElementById('userAvatar');
+    const logoutBtn      = document.getElementById('logoutBtn');
+
+    function showLoginScreen() {
+        loginScreen.style.display = 'flex';
+        userAvatarWrap.style.display = 'none';
+    }
+
+    function hideLoginScreen(user) {
+        loginScreen.style.display = 'none';
+        userAvatar.src    = user.picture || '';
+        userAvatar.title  = `${user.name} (${user.email})`;
+        userAvatarWrap.style.display = 'flex';
+    }
+
+    googleSignInBtn.addEventListener('click', async () => {
+        googleSignInBtn.disabled = true;
+        googleSignInBtn.querySelector('span').textContent = 'Signing in...';
+        loginError.textContent = '';
+        try {
+            const user = await GoogleAuth.signIn();
+            hideLoginScreen(user);
+            initMainApp();
+        } catch (err) {
+            loginError.textContent = err || 'Sign in failed. Please try again.';
+            googleSignInBtn.disabled = false;
+            googleSignInBtn.querySelector('span').textContent = 'Sign in with Google';
+        }
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+        await GoogleAuth.signOut();
+        showLoginScreen();
+    });
+
+    // Check if already signed in
+    const savedUser = await GoogleAuth.getUser();
+    if (savedUser) {
+        hideLoginScreen(savedUser);
+        initMainApp();
+    } else {
+        showLoginScreen();
+        return; // don't run app until logged in
+    }
+
+    function initMainApp() {
+    // ── End Auth Gate ─────────────────────────────────────────────────────────
+
     // Use existing stats container from HTML
     const statsContainer = document.getElementById('statsContainer');
 
@@ -51,6 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
         hideCachedBanner();
         startExtraction();
     });
+    } // end initMainApp
 });
 
 function checkShopifyStore(url) {
