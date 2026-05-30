@@ -52,15 +52,38 @@ body::before {
     max-height: 600px; */
 }
 
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+    text-align: center;
+    margin-bottom: 8px;
+    padding: 14px 14px 12px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Top row: hamburger left | logo center | spacer right */
+.header-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.header-spacer {
+    width: 36px;
+    flex-shrink: 0;
+}
+
 /* ── Hamburger Button ───────────────────────────────────────────────────── */
 .hamburger-btn {
-    position: absolute;
-    top: 28px;
-    left: 28px;
     width: 36px;
     height: 36px;
-    background: rgba(139, 92, 246, 0.15);
-    border: 1px solid rgba(139, 92, 246, 0.3);
+    flex-shrink: 0;
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.28);
     border-radius: 10px;
     cursor: pointer;
     display: flex;
@@ -69,39 +92,33 @@ body::before {
     justify-content: center;
     gap: 5px;
     padding: 0;
-    z-index: 10;
-    transition: background 0.2s, border-color 0.2s;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
 .hamburger-btn:hover {
-    background: rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.28);
     border-color: rgba(139, 92, 246, 0.6);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
 }
 
 .hamburger-btn span {
     display: block;
-    width: 18px;
+    width: 16px;
     height: 2px;
     background: var(--accent);
     border-radius: 2px;
-    transition: all 0.3s;
+    transition: all 0.28s ease;
 }
 
 .hamburger-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-.hamburger-btn.open span:nth-child(2) { opacity: 0; }
+.hamburger-btn.open span:nth-child(2) { opacity: 0; width: 0; }
 .hamburger-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
-/* ── Header (position relative for hamburger) ───────────────────────────── */
-.header {
-    position: relative;
-    text-align: center;
-    margin-bottom: 8px;
-    padding: 12px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(10px);
-    border-radius: 16px;
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+/* Logo — centered inside flex row */
+.header-top-row .logo {
+    flex: 1;
+    justify-content: center;
+    margin-bottom: 0;
 }
 
 .logo {
